@@ -1,85 +1,98 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ProductCard from "./components/product/ProductCard";
 import API from "../services/api";
 
-// Định nghĩa kiểu dữ liệu rõ ràng
 interface Product {
   sku: string;
   productName: string;
   currentPrice: number;
-  competitorPrice: number;
-  lastUpdated: string;
+  image?: string;
 }
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    API.get("/products")
-      .then((res) => {
+    const fetchProducts = async () => {
+      try {
+        const res = await API.get("/products");
         setProducts(res.data);
+      } catch (err) {
+        let errorMessage = "Không thể tải sản phẩm";
+        if (err instanceof Error) errorMessage = err.message;
+        setError(errorMessage);
+      } finally {
         setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Lỗi lấy dữ liệu:", err);
-        setLoading(false);
-      });
+      }
+    };
+
+    fetchProducts();
   }, []);
 
-  if (loading) return <div style={{ padding: 20 }}>Đang tải dữ liệu hệ thống...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-gray-500 text-lg">
+        ⏳ Đang tải sản phẩm...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-red-500 text-lg">
+        ❌ {error}
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto", fontFamily: "sans-serif" }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h1>🚀 FLOW 1: Tự Động Giảm Giá</h1>
-        <div style={{ fontSize: '12px', color: '#666' }}>
-          Server: <span style={{ color: '#27ae60' }}>● Online (ngrok active)</span>
-        </div>
-      </header>
+    <div className="max-w-7xl mx-auto px-4 py-10">
+      {/* Hero */}
+      <div className="text-center mb-16 p-10 rounded-3xl bg-gradient-to-r from-blue-50 to-indigo-100 shadow-sm">
+        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-gray-800 to-blue-500 text-transparent bg-clip-text">
+          Khoi Store
+        </h1>
+        <p className="text-gray-600 text-lg max-w-xl mx-auto">
+          Sản phẩm chất lượng • Giá thông minh • Trải nghiệm hiện đại
+        </p>
+      </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" }}>
-        <thead>
-          <tr style={{ backgroundColor: "#2c3e50", color: "#fff", textAlign: "left" }}>
-            <th style={thStyle}>SKU</th>
-            <th style={thStyle}>Tên Sản Phẩm</th>
-            <th style={thStyle}>Giá Hiện Tại</th>
-            <th style={thStyle}>Giá Đối Thủ</th>
-            <th style={thStyle}>Trạng Thái</th>
-            <th style={thStyle}>Cập Nhật Cuối</th>
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((product, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={tdStyle}>{product.sku}</td>
-              <td style={tdStyle}><strong>{product.productName}</strong></td>
-              <td style={{ ...tdStyle, color: "#2980b9", fontWeight: "bold" }}>
-                {product.currentPrice.toLocaleString()} đ
-              </td>
-              <td style={tdStyle}>{product.competitorPrice.toLocaleString()} đ</td>
-              <td style={tdStyle}>
-                <span style={{ 
-                  padding: "4px 8px", 
-                  borderRadius: "4px", 
-                  backgroundColor: product.currentPrice <= product.competitorPrice ? "#eafaf1" : "#fff4e5",
-                  color: product.currentPrice <= product.competitorPrice ? "#27ae60" : "#d35400",
-                  fontSize: "12px"
-                }}>
-                  {product.currentPrice <= product.competitorPrice ? "Giá Cạnh Tranh" : "Cần Giảm Giá"}
-                </span>
-              </td>
-              <td style={{ ...tdStyle, fontSize: "12px", color: "#95a5a6" }}>
-                {product.lastUpdated ? new Date(product.lastUpdated).toLocaleString("vi-VN") : "---"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Title */}
+      <div className="text-center mb-10">
+        <h2 className="text-3xl font-semibold text-gray-800 mb-2">
+          Sản phẩm nổi bật
+        </h2>
+        <p className="text-gray-500">Top sản phẩm được đề xuất cho bạn</p>
+      </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+        {products.map((product) => (
+          <div
+            key={product.sku}
+            className="transform hover:scale-105 transition duration-300"
+          >
+            <ProductCard
+              product={{
+                sku: product.sku,
+                productName: product.productName,
+                currentPrice: product.currentPrice,
+                image: product.image || "/images/default-product.jpg",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {products.length === 0 && (
+        <div className="text-center py-20 text-gray-500">
+          📦 Chưa có sản phẩm nào
+        </div>
+      )}
     </div>
   );
 }
-
-const thStyle = { padding: "15px" };
-const tdStyle = { padding: "12px 15px" };

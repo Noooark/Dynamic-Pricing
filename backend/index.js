@@ -3,7 +3,7 @@ const express = require("express");
 const cors = require("cors");
 
 const productRoutes = require("./routes/product.routes");
-
+const vipPricingRoutes = require("./routes/vipPricing.routes");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -18,3 +18,5 @@ app.get("/", (req, res) => {
 app.listen(5000, () => {
   console.log("Server running at http://localhost:5000");
 });
+
+app.use("/vip-pricing", vipPricingRoutes);
