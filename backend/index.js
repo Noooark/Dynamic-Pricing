@@ -5,6 +5,7 @@ const cors = require("cors");
 
 const productRoutes = require("./routes/product.routes");
 const vipPricingRoutes = require("./routes/vipPricing.routes");
+const priceRoutes = require("./routes/price.routes");
 
 const app = express();
 app.use(cors());
@@ -12,9 +13,8 @@ app.use(express.json());
 
 // Mount routes
 app.use("/products", productRoutes);        
-
-// Sửa dòng này để khớp với webhook n8n
-app.use("/webhook-test/vip-pricing", vipPricingRoutes);   // ← Sửa ở đây
+app.use("/vip-pricing", vipPricingRoutes); 
+app.use("/price", priceRoutes);  
 
 app.get("/", (req, res) => {
   console.log("🔥 ROOT HIT");

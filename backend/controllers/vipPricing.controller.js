@@ -1,53 +1,56 @@
-// backend/controllers/vipPricing.controller.js
-const { getProductBySKU, getCustomerByID } = require("../services/googleSheet.service");
+const axios = require("axios");
 
 exports.calculateVIPPrice = async (req, res) => {
   try {
     const { SKU, CustomerID } = req.body;
 
+    // Validate input
     if (!SKU || !CustomerID) {
-      return res.status(400).json({ message: "Thiếu SKU hoặc CustomerID" });
+      return res.status(400).json({
+        message: "Thiếu SKU hoặc CustomerID",
+      });
     }
 
-    const product = await getProductBySKU(SKU);
-    const customer = await getCustomerByID(CustomerID);
+    // 👉 Gọi n8n webhook
+    const response = await axios.post(
+      process.env.N8N_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/vip-pricing",
+      {
+        SKU,
+        CustomerID,
+      },
+      {
+        timeout: 5000, // tránh treo request
+      }
+    );
 
-    if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
-    if (!customer) return res.status(404).json({ message: "Không tìm thấy khách hàng" });
+    const data = response.data;
 
-    const currentPrice = parseFloat(product.currentPrice) || 0;
-    const level = customer.memberShip || "Silver";
-    const last30 = customer.last30dOrders || 0;
+    // Validate response từ n8n
+    if (!data || !data.display_price) {
+      return res.status(500).json({
+        message: "Pricing service trả dữ liệu không hợp lệ",
+      });
+    }
 
-    let discount = 0;
-    if (level === "Silver") discount = 3;
-    if (level === "Gold") discount = 5;
-    if (level === "Platinum") discount = 8;
-
-    if (last30 >= 5) discount += 2;
-    if (last30 >= 10) discount += 4;
-    if (discount > 15) discount = 15;
-
-    const displayPrice = Math.round(currentPrice * (1 - discount / 100));
-
-    res.json({
-      display_price: displayPrice,
-      display_price_text: displayPrice.toLocaleString("vi-VN") + " ₫",
-      discount_percent: discount,
-      savings: currentPrice - displayPrice,
-      savings_text: (currentPrice - displayPrice).toLocaleString("vi-VN") + " ₫",
-      savings_percent: discount,
-      member_level: level,
-      isVIP: discount > 0,
-      SKU: SKU,
-      ProductName: product.productName,
+    // 👉 Trả thẳng về FE
+    return res.json({
+      ...data,
+      source: "n8n",
     });
 
   } catch (err) {
-    console.error("VIP Pricing Error:", err);
-    res.status(500).json({ 
-      message: "Lỗi server khi tính giá VIP", 
-      error: err.message 
-    });
+    // In ra chi tiết để biết n8n trả về lỗi gì hoặc tại sao không kết nối được
+    if (err.response) {
+      // n8n có phản hồi nhưng trả về lỗi (ví dụ: 404, 500)
+      console.error("n8n Error Data:", err.response.data);
+      console.error("n8n Error Status:", err.response.status);
+    } else if (err.request) {
+      // Backend gọi đi nhưng n8n không trả lời (sai IP, sai Port, Firewall chặn)
+      console.error("Không nhận được phản hồi từ n8n. Kiểm tra IP/Port.");
+    } else {
+      console.error("Lỗi thiết lập request:", err.message);
+    }
+
+    return res.status(500).json({ message: "...", fallback: true });
   }
 };
