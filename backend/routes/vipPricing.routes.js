@@ -1,4 +1,4 @@
-// routes/vipPricing.routes.js
+// backend/routes/vipPricing.routes.js
 const express = require("express");
 const router = express.Router();
 const { calculateVIPPrice } = require("../controllers/vipPricing.controller");
