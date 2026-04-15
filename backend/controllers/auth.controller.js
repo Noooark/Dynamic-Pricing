@@ -1,11 +1,10 @@
-const { google } = require("googleapis");
+const { createClient } = require('@supabase/supabase-js');
 
-const auth = new google.auth.GoogleAuth({
-  keyFile: "credentials.json",
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-});
+// Thay thế bằng thông tin thực tế từ Supabase Dashboard của bạn
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-const SPREADSHEET_ID = "1z4q6PEUVbgN35zNOL2d8NxxrRfaw478QAJVFdQPFaHo";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 exports.register = async (req, res) => {
   try {
@@ -15,48 +14,43 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "Thiếu thông tin" });
     }
 
-    const sheets = google.sheets({
-      version: "v4",
-      auth: await auth.getClient(),
-    });
+    // 1. Lấy số lượng khách hàng hiện tại để tạo ID (Tương đương việc đếm dòng trong Sheets)
+    const { count, error: countError } = await supabase
+      .from('customers')
+      .select('*', { count: 'exact', head: true });
 
-    // 👉 Lấy toàn bộ dữ liệu để tạo ID
-    const getData = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "Customer Data!A:A",
-    });
+    if (countError) throw countError;
 
-    const rows = getData.data.values || [];
-
-    const newIdNumber = rows.length; // dòng header + data
+    // Tạo CustomerID theo format C001, C002...
+    const newIdNumber = (count || 0) + 1;
     const customerID = `C${String(newIdNumber).padStart(3, "0")}`;
 
-    // 👉 Ghi dữ liệu
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "Customer Data!A:H",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[
-          customerID,
-          Name,
-          0,
-          0,
-          "Silver",
-          0,
-          Email,
-          Password
-        ]],
-      },
-    });
+    // 2. Ghi dữ liệu vào bảng 'customers'
+    const { data, error: insertError } = await supabase
+      .from('customers')
+      .insert([
+        { 
+          customer_id: customerID, 
+          name: Name, 
+          total_orders: 0, 
+          total_spent: 0, 
+          membership_type: 'Silver', 
+          email: Email, 
+          // password: Password // Lưu ý: Nên hash password trước khi lưu
+        }
+      ])
+      .select();
+
+    if (insertError) throw insertError;
 
     res.json({
-      message: "Đăng ký thành công",
+      message: "Đăng ký thành công trên Supabase",
       CustomerID: customerID,
+      data: data[0]
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Lỗi server" });
+    console.error("Lỗi Supabase:", err.message);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
