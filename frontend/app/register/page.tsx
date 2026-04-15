@@ -11,7 +11,7 @@ export default function RegisterPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    customerId: "",
+    password: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -41,14 +41,10 @@ export default function RegisterPage() {
     setMessage(null);
 
     try {
-      await API.post("/register", {
-        CustomerID: formData.customerId || `C${Date.now().toString().slice(-6)}`,
-        Name: formData.name.trim(),
-        Email: formData.email.trim(),
-        TotalOrders: 0,
-        TotalSpent: 0,
-        MemberShip: "Silver",
-        Last30dOrders: 0,
+      await API.post("/auth/register", {
+        Name: formData.name,
+        Email: formData.email,
+        Password: formData.password,
       });
 
       setMessage({
@@ -111,12 +107,12 @@ export default function RegisterPage() {
           />
 
           <input
-            type="text"
-            placeholder="Customer ID (tuỳ chọn)"
-            value={formData.customerId}
-            onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
-            className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-          />
+              type="password"
+              placeholder="Mật khẩu"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+            />
 
           <button
             type="submit"

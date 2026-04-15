@@ -6,6 +6,7 @@ const cors = require("cors");
 const productRoutes = require("./routes/product.routes");
 const vipPricingRoutes = require("./routes/vipPricing.routes");
 const priceRoutes = require("./routes/price.routes");
+const authRoutes = require("./routes/auth.routes");
 
 const app = express();
 app.use(cors());
@@ -14,7 +15,8 @@ app.use(express.json());
 // Mount routes
 app.use("/products", productRoutes);        
 app.use("/vip-pricing", vipPricingRoutes); 
-app.use("/price", priceRoutes);  
+app.use("/price", priceRoutes); 
+app.use("/auth", authRoutes);
 
 app.get("/", (req, res) => {
   console.log("🔥 ROOT HIT");
