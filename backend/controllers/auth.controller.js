@@ -36,7 +36,6 @@ exports.register = async (req, res) => {
           total_spent: 0, 
           membership_type: 'Silver', 
           email: Email, 
-          // password: Password // Lưu ý: Nên hash password trước khi lưu
         }
       ])
       .select();
