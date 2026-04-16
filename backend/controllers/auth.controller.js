@@ -54,3 +54,38 @@ exports.register = async (req, res) => {
     res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+
+exports.login = async (req, res) => {
+  try {
+    const { Email, Password } = req.body;
+
+    if (!Email || !Password) {
+      return res.status(400).json({ message: "Vui lòng nhập đầy đủ Email và Password" });
+    }
+
+    // 1. Tìm khách hàng trong Supabase dựa trên Email và Password
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('email', Email)
+      .eq('password', Password) 
+      .single(); // Chỉ lấy 1 bản ghi duy nhất
+
+    if (error || !customer) {
+      console.error("Login Error:", error);
+      return res.status(401).json({ message: "Email hoặc mật khẩu không chính xác" });
+    }
+
+    // 2. Trả về thông tin khách hàng (Không nên trả về password)
+    const { password, ...userData } = customer;
+
+    res.json({
+      message: "Đăng nhập thành công",
+      user: userData
+    });
+
+  } catch (err) {
+    console.error("Lỗi Server Login:", err.message);
+    res.status(500).json({ message: "Lỗi hệ thống", error: err.message });
+  }
+};
