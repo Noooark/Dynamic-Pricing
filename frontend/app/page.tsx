@@ -14,6 +14,7 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -32,23 +33,42 @@ export default function Home() {
     fetchProducts();
   }, []);
 
+  const filteredProducts = products.filter((product) => {
+    const keyword = searchTerm.trim().toLowerCase();
+    if (!keyword) return true;
+
+    return (
+      product.sku.toLowerCase().includes(keyword) ||
+      product.product_name.toLowerCase().includes(keyword)
+    );
+  });
+
+  const priceValues = filteredProducts.map((product) => product.current_price);
+  const totalProducts = filteredProducts.length;
+  const averagePrice =
+    totalProducts > 0
+      ? Math.round(priceValues.reduce((sum, price) => sum + price, 0) / totalProducts)
+      : 0;
+  const lowestPrice = totalProducts > 0 ? Math.min(...priceValues) : 0;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-gray-500 text-lg">
-        ⏳ Đang tải sản phẩm...
+      <div className="flex min-h-screen items-center justify-center px-4 text-lg text-slate-500">
+        Đang tải sản phẩm...
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-red-500 text-lg">
-        ❌ {error}
+      <div className="flex min-h-screen items-center justify-center px-4 text-lg text-red-500">
+        {error}
       </div>
     );
   }
 
   return (
+<<<<<<< Updated upstream
     <div className="max-w-7xl mx-auto px-4 py-10">
       {/* Header của Store */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
