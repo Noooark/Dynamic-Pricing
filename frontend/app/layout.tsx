@@ -1,7 +1,8 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
-import Header from "./components/Header";   // ← Thêm dòng import này
+import Header from "./components/Header";
+import { AuthProvider } from "./context/AuthContext";
 
 export const metadata: Metadata = {
   title: "Khoi Store - Dynamic Pricing",
@@ -16,8 +17,10 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body>
-        <Header />           {/* ← Dùng Header đã import */}
-        <main>{children}</main>
+        <AuthProvider>
+          <Header />
+          <main>{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );

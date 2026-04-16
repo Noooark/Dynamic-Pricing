@@ -1,32 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import API from "../../services/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { signIn, isAuthenticated, isReady } = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
-
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
 
-  // Kiểm tra định dạng email
   const isValidEmail = (email: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  // Điều kiện để nút Đăng nhập sáng lên
   const isFormValid = isValidEmail(formData.email) && formData.password.length > 0;
+
+  useEffect(() => {
+    if (isReady && isAuthenticated) {
+      router.replace("/account");
+    }
+  }, [isAuthenticated, isReady, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,17 +45,9 @@ export default function LoginPage() {
         Email: formData.email.trim(),
         Password: formData.password,
       });
-
-      // Lưu thông tin user vào localStorage (để n8n hoặc các trang khác sử dụng)
-      localStorage.setItem("user", JSON.stringify(response.data.user));
-
-      setMessage({
-        type: "success",
-        text: "👋 Chào mừng bạn quay trở lại!",
-      });
-
-      // Chuyển hướng sau khi đăng nhập thành công
-      setTimeout(() => router.push("/dashboard"), 1500); 
+      signIn(response.data.user);
+      setMessage({ type: "success", text: "Chào mừng bạn quay trở lại." });
+      setTimeout(() => router.push("/account"), 1200);
     } catch (err: unknown) {
       let errorMessage = "Đăng nhập thất bại";
 
@@ -66,21 +62,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white p-10 rounded-3xl shadow-xl w-full max-w-md border border-gray-200">
-        
-        {/* HEADER */}
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-900">Đăng nhập</h2>
-          <p className="text-gray-600 mt-2">
+    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="glass-panel w-full max-w-md rounded-[32px] border border-white/60 p-8 shadow-[0_24px_70px_rgba(15,23,42,0.12)] sm:p-10">
+        <div className="mb-8 text-center">
+          <h2 className="text-3xl font-bold text-slate-900">Đăng nhập</h2>
+          <p className="mt-2 text-slate-600">
             Tiếp tục quản lý giá và ưu đãi của bạn
           </p>
         </div>
 
-        {/* MESSAGE */}
         {message && (
           <div
-            className={`p-4 rounded-xl mb-6 text-sm text-center font-medium ${
+            className={`mb-6 rounded-2xl p-4 text-center text-sm font-medium ${
               message.type === "success"
                 ? "bg-green-100 text-green-800"
                 : "bg-red-100 text-red-700"
@@ -90,55 +83,45 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* EMAIL */}
           <input
             type="email"
             placeholder="Email"
             value={formData.email}
-            onChange={(e) =>
-              setFormData({ ...formData, email: e.target.value })
-            }
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
           />
 
-          {/* PASSWORD */}
           <div className="relative">
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Mật khẩu"
               value={formData.password}
-              onChange={(e) =>
-                setFormData({ ...formData, password: e.target.value })
-              }
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
             />
             <span
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-3 cursor-pointer text-gray-600 hover:text-gray-900 text-sm"
+              className="absolute right-4 top-3 cursor-pointer text-sm text-slate-600 hover:text-slate-900"
             >
               {showPassword ? "Ẩn" : "Hiện"}
             </span>
           </div>
 
-          {/* BUTTON */}
           <button
             type="submit"
             disabled={!isFormValid || loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:bg-gray-400"
+            className="w-full rounded-2xl bg-slate-900 py-3 font-semibold text-white hover:bg-blue-600 disabled:bg-slate-300"
           >
             {loading ? "Đang xử lý..." : "Đăng nhập"}
           </button>
         </form>
 
-        {/* FOOTER */}
-        <p className="text-center mt-6 text-gray-700">
+        <p className="mt-6 text-center text-slate-700">
           Chưa có tài khoản?{" "}
           <span
             onClick={() => router.push("/register")}
-            className="text-blue-600 cursor-pointer hover:underline font-medium"
+            className="cursor-pointer font-medium text-blue-600 hover:underline"
           >
             Đăng ký ngay
           </span>
