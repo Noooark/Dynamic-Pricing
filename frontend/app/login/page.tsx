@@ -6,12 +6,11 @@ import axios from "axios";
 import API from "../../services/api";
 import { useAuth } from "../context/AuthContext";
 
-export default function RegisterPage() {
+export default function LoginPage() {
   const router = useRouter();
   const { signIn, isAuthenticated, isReady } = useAuth();
 
   const [formData, setFormData] = useState({
-    name: "",
     email: "",
     password: "",
   });
@@ -25,10 +24,7 @@ export default function RegisterPage() {
   const isValidEmail = (email: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const isFormValid =
-    Boolean(formData.name.trim()) &&
-    isValidEmail(formData.email) &&
-    formData.password.length >= 4;
+  const isFormValid = isValidEmail(formData.email) && formData.password.length > 0;
 
   useEffect(() => {
     if (isReady && isAuthenticated) {
@@ -45,17 +41,16 @@ export default function RegisterPage() {
     setMessage(null);
 
     try {
-      const response = await API.post("/auth/register", {
-        Name: formData.name.trim(),
+      const response = await API.post("/auth/login", {
         Email: formData.email.trim(),
         Password: formData.password,
       });
 
       signIn(response.data.user);
-      setMessage({ type: "success", text: "Đăng ký thành công." });
+      setMessage({ type: "success", text: "Chào mừng bạn quay trở lại." });
       setTimeout(() => router.push("/account"), 1200);
     } catch (err: unknown) {
-      let errorMessage = "Đăng ký thất bại";
+      let errorMessage = "Đăng nhập thất bại";
 
       if (axios.isAxiosError(err)) {
         errorMessage = err.response?.data?.message || errorMessage;
@@ -71,9 +66,9 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="glass-panel w-full max-w-md rounded-[32px] border border-white/60 p-8 shadow-[0_24px_70px_rgba(15,23,42,0.12)] sm:p-10">
         <div className="mb-8 text-center">
-          <h2 className="text-3xl font-bold text-slate-900">Tạo tài khoản</h2>
+          <h2 className="text-3xl font-bold text-slate-900">Đăng nhập</h2>
           <p className="mt-2 text-slate-600">
-            Bắt đầu trải nghiệm mua sắm thông minh
+            Tiếp tục quản lý giá và ưu đãi của bạn
           </p>
         </div>
 
@@ -91,25 +86,11 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <input
-            type="text"
-            placeholder="Họ và tên"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-          />
-
-          <input
             type="email"
             placeholder="Email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className={`w-full rounded-2xl border px-4 py-3 text-slate-900 outline-none placeholder:text-slate-400 ${
-              formData.email
-                ? isValidEmail(formData.email)
-                  ? "border-green-500 focus:ring-4 focus:ring-green-100"
-                  : "border-red-500 focus:ring-4 focus:ring-red-100"
-                : "border-slate-200 focus:ring-4 focus:ring-blue-100"
-            }`}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
           />
 
           <div className="relative">
@@ -133,17 +114,17 @@ export default function RegisterPage() {
             disabled={!isFormValid || loading}
             className="w-full rounded-2xl bg-slate-900 py-3 font-semibold text-white hover:bg-blue-600 disabled:bg-slate-300"
           >
-            {loading ? "Đang xử lý..." : "Đăng ký"}
+            {loading ? "Đang xử lý..." : "Đăng nhập"}
           </button>
         </form>
 
         <p className="mt-6 text-center text-slate-700">
-          Đã có tài khoản?{" "}
+          Chưa có tài khoản?{" "}
           <span
-            onClick={() => router.push("/login")}
+            onClick={() => router.push("/register")}
             className="cursor-pointer font-medium text-blue-600 hover:underline"
           >
-            Đăng nhập
+            Đăng ký ngay
           </span>
         </p>
       </div>

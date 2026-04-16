@@ -1,7 +1,18 @@
 "use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
 
 export default function Header() {
+  const router = useRouter();
+  const { user, isReady, isAuthenticated, signOut } = useAuth();
+
+  const handleLogout = () => {
+    signOut();
+    router.push("/");
+  };
+
   return (
     <header className="sticky top-0 z-50 px-3 pt-3 sm:px-5">
       <div className="glass-panel mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 rounded-[28px] px-5 py-4 sm:px-6">
@@ -27,17 +38,37 @@ export default function Header() {
         </nav>
 
         <div className="order-2 flex items-center gap-3 sm:order-3">
-          <div className="hidden rounded-full border border-white/70 bg-white/70 px-3 py-2 text-sm text-slate-700 shadow-sm sm:flex sm:items-center sm:gap-2">
-            <span className="text-blue-600">●</span>
-            <span>Nguyễn Tư Anh Nguyễn</span>
-          </div>
+          {isReady && isAuthenticated && user ? (
+            <>
+              <div className="hidden rounded-full border border-white/70 bg-white/70 px-3 py-2 text-sm text-slate-700 shadow-sm sm:flex sm:items-center sm:gap-2">
+                <span className="text-blue-600">●</span>
+                <span>{user.name}</span>
+              </div>
 
-          <Link
-            href="/register"
-            className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-300 hover:-translate-y-0.5 hover:bg-blue-600"
-          >
-            Đăng ký
-          </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-300 hover:-translate-y-0.5 hover:bg-blue-600"
+              >
+                Đăng xuất
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-blue-200 hover:text-blue-600"
+              >
+                Đăng nhập
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-300 hover:-translate-y-0.5 hover:bg-blue-600"
+              >
+                Đăng ký
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>
