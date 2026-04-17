@@ -39,6 +39,13 @@ export default function AdminDashboard() {
     unchangedCount?: number;
     error?: string;
   } | null>(null);
+  const [flow2Result, setFlow2Result] = useState<{
+    message?: string;
+    totalProducts?: number;
+    updatedCount?: number;
+    unchangedCount?: number;
+    error?: string;
+  } | null>(null);
   const [flow4Result, setFlow4Result] = useState<{
     message?: string;
     totalProducts?: number;
@@ -96,6 +103,28 @@ export default function AdminDashboard() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
       setFlow1Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 1" });
+    } finally {
+      setFlowRunning(false);
+    }
+  };
+
+  const runFlow2 = async () => {
+    if (!confirm("Bạn có chắc muốn chạy FLOW 2 - Xả kho tự động?")) {
+      return;
+    }
+
+    setFlowRunning(true);
+    setFlow2Result(null);
+
+    try {
+      const response = await api.post("/admin/flow2/run");
+      setFlow2Result(response.data);
+      fetchProducts();
+      fetchHistory();
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const error = err as any;
+      setFlow2Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 2" });
     } finally {
       setFlowRunning(false);
     }
@@ -230,6 +259,44 @@ export default function AdminDashboard() {
                   {flow1Result.totalProducts && <p>Tổng sản phẩm: {flow1Result.totalProducts}</p>}
                   {flow1Result.updatedCount !== undefined && <p>Đã cập nhật: {flow1Result.updatedCount}</p>}
                   {flow1Result.unchangedCount !== undefined && <p>Không thay đổi: {flow1Result.unchangedCount}</p>}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Flow 2 Button */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">FLOW 2: Xả kho tự động</h2>
+          <div className="text-gray-600 mb-4">
+            <p>Hệ thống sẽ tự động kiểm tra tồn kho và áp dụng giảm giá theo thời gian lưu kho:</p>
+            <ul className="list-disc list-inside mt-2">
+              <li>Tồn kho trên 30 ngày: Giảm 10%</li>
+              <li>Tồn kho trên 60 ngày: Giảm 20%</li>
+              <li>Không giảm dưới Floor Price</li>
+              <li>Gửi email thông báo ưu đãi cho khách hàng</li>
+            </ul>
+          </div>
+          <button
+            onClick={runFlow2}
+            disabled={flowRunning}
+            className={`px-6 py-3 rounded font-bold text-white transition ${
+              flowRunning ? "bg-gray-400 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"
+            }`}
+          >
+            {flowRunning ? "Đang chạy..." : "Chạy FLOW 2 Ngay"}
+          </button>
+
+          {flow2Result && (
+            <div className={`mt-4 p-4 rounded ${flow2Result.error ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+              {flow2Result.error ? (
+                <p>{flow2Result.error}</p>
+              ) : (
+                <div>
+                  <p className="font-bold">{flow2Result.message}</p>
+                  {flow2Result.totalProducts && <p>Tổng sản phẩm: {flow2Result.totalProducts}</p>}
+                  {flow2Result.updatedCount !== undefined && <p>Đã cập nhật: {flow2Result.updatedCount}</p>}
+                  {flow2Result.unchangedCount !== undefined && <p>Không thay đổi: {flow2Result.unchangedCount}</p>}
                 </div>
               )}
             </div>

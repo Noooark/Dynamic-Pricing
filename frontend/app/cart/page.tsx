@@ -38,6 +38,7 @@ export default function CartPage() {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [vipCalculating, setVipCalculating] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -98,24 +99,42 @@ export default function CartPage() {
   const removeFromCart = async (SKU: string) => {
     if (!user?.customer_id) return;
 
+    const item = cart.find(item => item.SKU === SKU);
+
     try {
       await API.post("/cart/remove", {
         CustomerID: user.customer_id,
         SKU
       });
-      fetchCart();
+      
+      // Cập nhật UI ngay lập tức (optimistic update)
+      setCart(prev => prev.filter(item => item.SKU !== SKU));
+      
+      // Hiển thị thông báo
+      showNotification(`✅ Đã xóa "${item?.product_name || SKU}" khỏi giỏ hàng`, 'success');
     } catch (err) {
       console.error("Lỗi xóa khỏi giỏ:", err);
-      setError("Không thể xóa sản phẩm khỏi giỏ");
+      showNotification("❌ Không thể xóa sản phẩm khỏi giỏ", 'error');
+      // Reload lại giỏ hàng nếu có lỗi
+      fetchCart();
     }
   };
 
   const updateQuantity = async (SKU: string, quantity: number) => {
     if (!user?.customer_id) return;
+    
+    const item = cart.find(item => item.SKU === SKU);
+    if (!item) return;
+
     if (quantity <= 0) {
-      removeFromCart(SKU);
+      await removeFromCart(SKU);
       return;
     }
+
+    // Optimistic update - cập nhật ngay lập tức
+    setCart(prev => prev.map(item => 
+      item.SKU === SKU ? { ...item, quantity } : item
+    ));
 
     try {
       await API.post("/cart/update-quantity", {
@@ -123,11 +142,19 @@ export default function CartPage() {
         SKU,
         quantity
       });
-      fetchCart();
     } catch (err) {
       console.error("Lỗi cập nhật số lượng:", err);
-      setError("Không thể cập nhật số lượng");
+      showNotification("❌ Không thể cập nhật số lượng", 'error');
+      // Quay lại số lượng cũ nếu có lỗi
+      fetchCart();
     }
+  };
+
+  const showNotification = (message: string, type: 'success' | 'error') => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification(null);
+    }, 3000);
   };
 
   const calculateVIPPrices = async () => {
@@ -239,6 +266,20 @@ export default function CartPage() {
         </div>
       )}
 
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg animate-fade-in-down ${
+          notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          <div className="flex items-center space-x-2">
+            <span className="text-lg">
+              {notification.type === 'success' ? '✓' : '✗'}
+            </span>
+            <span className="font-medium">{notification.message}</span>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Cart Items */}
         <div className="lg:col-span-2">
@@ -313,28 +354,42 @@ export default function CartPage() {
                       </div>
 
                       {/* Quantity Controls */}
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-3">
                         <button
                           onClick={() => updateQuantity(item.SKU, item.quantity - 1)}
-                          className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                          disabled={updating}
+                          className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Giảm số lượng"
                         >
-                          −
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                          </svg>
                         </button>
-                        <span className="w-12 text-center font-medium">{item.quantity}</span>
+                        
+                        <span className="w-14 text-center font-bold text-lg">{item.quantity}</span>
+                        
                         <button
                           onClick={() => updateQuantity(item.SKU, item.quantity + 1)}
-                          className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                          disabled={updating}
+                          className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Tăng số lượng"
                         >
-                          +
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
                         </button>
                       </div>
 
                       {/* Remove Button */}
                       <button
                         onClick={() => removeFromCart(item.SKU)}
-                        className="text-red-600 hover:text-red-800"
+                        disabled={updating}
+                        className="ml-4 px-4 py-2 rounded-lg border-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Xóa sản phẩm"
                       >
-                        Xóa
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                       </button>
                     </div>
                   </div>

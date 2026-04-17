@@ -250,6 +250,51 @@ exports.runFlow1 = async (req, res) => {
 };
 
 /**
+ * Chạy FLOW 2 (Xả kho tự động) - Gọi n8n webhook
+ */
+exports.runFlow2 = async (req, res) => {
+  try {
+    console.log("🚀 Running FLOW 2 - Xả kho tự động via n8n webhook...");
+
+    // Gọi n8n webhook để chạy FLOW 2
+    const axios = require('axios');
+    const n8nWebhookUrl = process.env.N8N_FLOW2_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow2";
+
+    console.log("📍 Webhook URL:", n8nWebhookUrl);
+
+    const response = await axios.post(
+      n8nWebhookUrl,
+      {
+        action: "run_flow2",
+        timestamp: new Date().toISOString()
+      },
+      { timeout: 60000 } // 60 giây timeout vì FLOW 2 cần thời gian xử lý
+    );
+
+    console.log("✅ FLOW 2 webhook response:", response.data);
+
+    res.json({
+      message: "FLOW 2 đã được kích hoạt qua n8n. Hệ thống sẽ tự động xả kho và gửi email cho khách hàng.",
+      n8nResponse: response.data,
+      note: "n8n sẽ xử lý: Kiểm tra tồn kho >30 ngày giảm 10%, >60 ngày giảm 20%, và gửi email thông báo"
+    });
+
+  } catch (err) {
+    console.error("❌ Run FLOW 2 error:", err.message);
+    if (err.response) {
+      console.error("📛 Response status:", err.response.status);
+      console.error("📛 Response data:", err.response.data);
+      console.error("📛 Response headers:", err.response.headers);
+    }
+    res.status(500).json({ 
+      message: "Lỗi khi gọi FLOW 2", 
+      error: err.message,
+      note: "Vui lòng kiểm tra n8n webhook URL và kết nối"
+    });
+  }
+};
+
+/**
  * Chạy FLOW 4 (Cập nhật giảm giá theo Event) - Gọi n8n webhook
  */
 exports.runFlow4 = async (req, res) => {
