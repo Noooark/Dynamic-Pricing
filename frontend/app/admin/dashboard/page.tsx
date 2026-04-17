@@ -103,7 +103,9 @@ export default function AdminDashboard() {
     setFlowResult(null);
 
     try {
-      const response = await api.post("/admin/flow4/run");
+      const response = await api.post("/admin/flow4", {
+        date: new Date().toISOString().split('T')[0]
+      });
       setFlowResult(response.data);
       fetchProducts();
       fetchHistory();

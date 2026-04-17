@@ -254,42 +254,118 @@ exports.runFlow1 = async (req, res) => {
  */
 exports.runFlow4 = async (req, res) => {
   try {
+    console.log("🔍 runFlow4 - req.body:", req.body);
+    console.log("🔍 runFlow4 - req.headers:", req.headers);
+
+    // Kiểm tra req.body
+    if (!req.body) {
+      return res.status(400).json({ 
+        message: "req.body is undefined. Please check Content-Type header",
+        note: "Make sure to send Content-Type: application/json"
+      });
+    }
+
+    const { date } = req.body;
+
+    // Nếu không có date, dùng ngày hiện tại
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    console.log("📅 Using date:", targetDate);
+
     console.log("🚀 Running FLOW 4 via n8n webhook...");
+    console.log(`📅 Date: ${date}`);
 
     // Gọi n8n webhook để chạy FLOW 4
     const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_FLOW4_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow4";
+    const n8nWebhookUrl = process.env.N8N_FLOW4_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/event-check";
 
     console.log("📍 Webhook URL:", n8nWebhookUrl);
+    console.log("📤 Sending payload:", { date: date });
 
     const response = await axios.post(
       n8nWebhookUrl,
       {
-        action: "run_flow4",
-        timestamp: new Date().toISOString()
+        date: date
       },
-      { timeout: 30000 } // 30 giây timeout
+      { 
+        timeout: 30000, // Tăng timeout vì FLOW 4 cần thời gian để cập nhật tất cả sản phẩm
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
     );
 
     console.log("✅ FLOW 4 webhook response:", response.data);
 
+    // Phân tích kết quả
+    const result = response.data;
+    let message = "Thực hiện FLOW 4 thành công";
+    let affectedProducts = 0;
+    let discountPercent = 0;
+    let hasEvent = false;
+
+    console.log("🔍 FLOW 4 result structure:", typeof result, result);
+
+    if (result && typeof result === 'object') {
+      // Xử lý response object từ n8n
+      if (result.hasEvent && result.discount_percent) {
+        hasEvent = true;
+        discountPercent = result.discount_percent;
+        affectedProducts = result.affectedProducts || 0;
+        const eventName = result.eventInfo?.name || "Event";
+        message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho event ${eventName}`;
+      } else if (result.eventInfo && result.eventInfo.discount_percent) {
+        hasEvent = true;
+        discountPercent = result.eventInfo.discount_percent;
+        affectedProducts = result.affectedProducts || 0;
+        const eventName = result.eventInfo.name || "Event";
+        message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho event ${eventName}`;
+      } else {
+        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động";
+      }
+    } else if (result && Array.isArray(result)) {
+      // Xử lý response array (dự phòng)
+      affectedProducts = result.length;
+      if (result[0] && result[0].json) {
+        discountPercent = result[0].json.discount_percent || 0;
+      }
+      if (discountPercent > 0) {
+        message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho ${affectedProducts} sản phẩm`;
+      } else {
+        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động";
+      }
+    } else {
+      message = "Thực hiện FLOW 4 thành công - Không có event hoạt động";
+    }
+
     res.json({
-      message: "FLOW 4 đã được kích hoạt qua n8n. Vui lòng kiểm tra email để xem kết quả.",
-      n8nResponse: response.data,
-      note: "n8n sẽ xử lý và gửi email báo cáo kết quả"
+      message: message,
+      date: date,
+      result: {
+        hasEvent: discountPercent > 0,
+        discountPercent: discountPercent,
+        affectedProducts: affectedProducts,
+        details: result
+      }
     });
 
   } catch (err) {
     console.error("❌ Run FLOW 4 error:", err.message);
+    console.error("❌ Error stack:", err.stack);
+    
     if (err.response) {
       console.error("📛 Response status:", err.response.status);
       console.error("📛 Response data:", err.response.data);
       console.error("📛 Response headers:", err.response.headers);
+    } else {
+      console.error("❌ No response object - likely network/connection error");
     }
+    
     res.status(500).json({ 
-      message: "Lỗi khi gọi FLOW 4", 
+      message: "Lỗi thực hiện FLOW 4", 
       error: err.message,
-      note: "Vui lòng kiểm tra n8n webhook URL và kết nối"
+      details: err.response?.data || null,
+      stack: err.stack
     });
   }
 };

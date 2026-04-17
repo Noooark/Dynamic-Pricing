@@ -20,6 +20,6 @@ router.get("/price-history", getPriceHistory);
 router.post("/flow1/run", runFlow1);
 
 // POST /admin/flow4/run - Chạy FLOW 4
-router.post("/flow4/run", runFlow4);
+router.post("/flow4", runFlow4);
 
 module.exports = router;

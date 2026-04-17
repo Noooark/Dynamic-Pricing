@@ -1,123 +1,219 @@
 {
-  "name": "FLOW 4 - Event Check",
+  "name": "FLOW 4: Event Check (Fixed)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "event-check",
-        "responseMode": "responseNode"
+        "responseMode": "responseNode",
+        "options": {}
       },
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -864,
-        -112
+        -416,
+        416
       ],
-      "id": "1"
+      "id": "16a5b616-4d58-4737-9cf7-ef0f44dad1e7",
+      "webhookId": "382c756b-3a4e-4d27-a77d-f651db19735c"
     },
     {
       "parameters": {
         "operation": "select",
         "schema": "public",
         "table": "events",
-        "additionalFields": {
-          "query": "SELECT * FROM events WHERE is_active = true AND start_date <= $1 AND end_date >= $1",
-          "values": [
-            "={{ $json.body.date || $today }}"
-          ]
-        }
+        "options": {}
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -624,
-        -272
+        -112,
+        432
       ],
-      "id": "2",
+      "id": "056c3f49-664b-432f-aff1-c8d511faea1a",
       "name": "Get Active Events",
       "credentials": {
         "postgres": {
-          "id": "postgres-credential-id",
-          "name": "Postgres account"
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
         }
       }
     },
     {
       "parameters": {
-        "functionCode": "const events = $input.all();\nconst currentDate = $json.body.date || new Date().toISOString().split('T')[0];\n\n// Lọc các event đang active (start_date <= today <= end_date)\nconst activeEvents = events.filter(event => {\n  const startDate = new Date(event.start_date);\n  const endDate = new Date(event.end_date);\n  const today = new Date(currentDate);\n  \n  // Set time to 00:00:00 for date comparison\n  startDate.setHours(0, 0, 0, 0);\n  endDate.setHours(23, 59, 59, 999);\n  today.setHours(0, 0, 0, 0);\n  \n  return today >= startDate && today <= endDate;\n});\n\n// Lấy event có discount cao nhất\nconst bestEvent = activeEvents.reduce((best, current) => {\n  if (!best) return current;\n  return current.discount_percent > best.discount_percent ? current : best;\n}, null);\n\nreturn [{\n  json: {\n    hasEvent: !!bestEvent,\n    event: bestEvent,\n    currentDate: currentDate,\n    activeEvents: activeEvents.length,\n    bestDiscount: bestEvent ? bestEvent.discount_percent : 0\n  }\n}];"
+        "jsCode": "// Lấy danh sách events từ node Postgres phía trước\nconst events = $input.all();\n\n// Lấy dữ liệu từ Webhook đầu vào\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\n\n// Lấy date từ body, nếu không có thì lấy ngày hiện tại\nconst currentDate = body.date || new Date().toISOString().split('T')[0];\nconst sku = body.SKU || \"Unknown\";\n\n// 1. Lọc các event đang active dựa trên currentDate\nconst activeEvents = events.filter((event) => {\n  const data = event.json;\n  \n  const startDateStr = String(data.start_date || data.startDate || '');\n  const endDateStr   = String(data.end_date   || data.endDate   || '');\n\n  if (!startDateStr || !endDateStr) return false;\n\n  const startDate = new Date(startDateStr);\n  const endDate   = new Date(endDateStr);\n  const today     = new Date(currentDate);\n\n  startDate.setHours(0, 0, 0, 0);\n  endDate.setHours(23, 59, 59, 999);\n  today.setHours(0, 0, 0, 0);\n\n  return today >= startDate && today <= endDate;\n});\n\n// 2. Tìm event có mức giảm giá tốt nhất\nlet bestEvent = null;\n\nfor (const item of activeEvents) {\n  const currentDiscount = item.json.discount_percent || 0;\n  const bestDiscount = bestEvent ? (bestEvent.json.discount_percent || 0) : -1;\n  \n  if (currentDiscount > bestDiscount) {\n    bestEvent = item;\n  }\n}\n\n// 3. Trả về kết quả cho node IF \"Has Event?\"\nreturn [{\n  json: {\n    sku: sku,\n    hasEvent: !!bestEvent,\n    event: bestEvent ? bestEvent.json : null,\n    currentDate: currentDate,\n    activeEventsCount: activeEvents.length,\n    bestDiscount: bestEvent ? (bestEvent.json.discount_percent || 0) : 0\n  }\n}];"
       },
       "name": "Check Event Logic",
-      "type": "n8n-nodes-base.function",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -160,
-        -144
+        208,
+        384
       ],
-      "id": "3"
+      "id": "8d805852-eb63-465c-a167-8522092a81a6"
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.hasEvent }}",
-              "operation": "equal",
-              "value2": true
+              "id": "6e029a8b-3ee5-48a1-905b-ad92d3d2ea13",
+              "leftValue": "={{ $json.hasEvent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "name": "If Has Event?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        272,
-        -144
+        544,
+        384
       ],
-      "id": "4"
+      "id": "e276cdf2-34e2-4b29-8b51-8a041ab43945"
     },
     {
       "parameters": {
-        "functionCode": "const event = $json.event;\nconst discountPercent = event.discount_percent;\n\n// Tính giá sau discount\nconst currentPrice = $json.body.currentPrice || $json.currentPrice || 0;\nconst displayPrice = Math.round(currentPrice * (1 - discountPercent / 100));\n\nreturn [{\n  json: {\n    ...$json,\n    eventDiscount: true,\n    eventInfo: {\n      name: event.name,\n      discount_percent: discountPercent,\n      start_date: event.start_date,\n      end_date: event.end_date\n    },\n    display_price: displayPrice,\n    discount_percent: discountPercent,\n    isVIP: true,\n    member_level: 'event'\n  }\n}];"
-      },
-      "name": "Apply Event Discount",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 2,
-      "position": [
-        576,
-        -200
-      ],
-      "id": "5"
-    },
-    {
-      "parameters": {
-        "functionCode": "return [{\n  json: {\n    ...$json,\n    eventDiscount: false,\n    eventInfo: null,\n    display_price: $json.body.currentPrice || $json.currentPrice || 0,\n    discount_percent: 0,\n    isVIP: false,\n    member_level: 'none'\n  }\n}];"
+        "jsCode": "// Mode: Run Once for All Items\nreturn $input.all().map(item => {\n  const data = item.json;\n  const body = data.body || {};\n  const sku = body.SKU || data.sku || \"Unknown\";\n\n  // Nếu không có event, trả về giá gốc (lấy từ currentPrice trong body hoặc 0)\n  const originalPrice = body.currentPrice || data.currentPrice || 0;\n\n  return {\n    json: {\n      sku: sku,\n      hasEvent: false,\n      eventDiscount: false,\n      eventInfo: null,\n      display_price: originalPrice,\n      discount_percent: 0,\n      isVIP: false,\n      member_level: 'none'\n    }\n  };\n});"
       },
       "name": "No Event Discount",
-      "type": "n8n-nodes-base.function",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        576,
-        -80
+        1056,
+        544
       ],
-      "id": "6"
+      "id": "022d6600-fd43-4a27-bd77-fc45d7b28d68"
     },
     {
       "parameters": {
-        "responseMode": "lastNode",
-        "responseBody": "={\n  \"hasEvent\": {{ $json.hasEvent }},\n  \"eventDiscount\": {{ $json.eventDiscount }},\n  \"display_price\": {{ $json.display_price }},\n  \"discount_percent\": {{ $json.discount_percent }},\n  \"isVIP\": {{ $json.isVIP }},\n  \"member_level\": \"{{ $json.member_level }}\",\n  \"eventInfo\": {{ $json.eventInfo || null }}\n}"
+        "operation": "select",
+        "schema": "public",
+        "table": "products",
+        "options": {
+          "returnAll": true
+        }
+      },
+      "name": "Get All Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        768,
+        288
+      ],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "credentials": {
+        "postgres": {
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy dữ liệu từ node trước (Check Event Logic)\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\n\n// Lấy thông tin event\nconst event = inputData.event;\n\n// Lấy danh sách tất cả sản phẩm\nconst allProducts = $input.all().map(item => item.json);\n\n// Nếu không có event, trả về danh sách sản phẩm không đổi\nif (!event || !inputData.hasEvent) {\n  return allProducts.map(product => ({\n    json: {\n      sku: product.sku,\n      hasEvent: false,\n      eventDiscount: false,\n      eventInfo: null,\n      display_price: product.current_price,\n      discount_percent: 0,\n      isVIP: false,\n      member_level: 'none'\n    }\n  }));\n}\n\n// Tính toán mức giảm giá\nconst discountPercent = event.discount_percent || 0;\n\n// Áp dụng discount cho TẤT CẢ sản phẩm\nconst updatedProducts = allProducts.map(product => {\n  const currentPrice = product.current_price || 0;\n  const displayPrice = Math.round(currentPrice * (1 - discountPercent / 100));\n  \n  return {\n    json: {\n      sku: product.sku,\n      hasEvent: true,\n      eventDiscount: true,\n      eventInfo: {\n        name: event.name || event.event_name || 'Sự kiện ưu đãi',\n        discount_percent: discountPercent,\n        start_date: event.start_date || '',\n        end_date: event.end_date || ''\n      },\n      display_price: displayPrice,\n      discount_percent: discountPercent,\n      isVIP: true,\n      member_level: 'event',\n      original_price: currentPrice,\n      new_price: displayPrice\n    }\n  };\n});\n\nreturn updatedProducts;"
+      },
+      "name": "Apply Event Discount to All Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        288
+      ],
+      "id": "56f7ed53-a137-4773-8113-c982d9f04951"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "products",
+        "options": {
+          "returnAll": false,
+          "limit": 1
+        }
+      },
+      "name": "Update Product Price",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        288
+      ],
+      "id": "b2c3d4e5-f678-90ab-cdef-1234567890ab",
+      "credentials": {
+        "postgres": {
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "price_history",
+        "options": {
+          "returnAll": false,
+          "limit": 1
+        }
+      },
+      "name": "Save Price History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        416
+      ],
+      "id": "c3d4e5f6-7890-abcd-ef12-34567890abcd",
+      "credentials": {
+        "postgres": {
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy dữ liệu từ node trước (Check Event Logic)\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst sku = body.SKU || inputData.sku || \"Unknown\";\n\n// Lấy thông tin event\nconst event = inputData.event;\n\n// Lấy giá sản phẩm từ database (sẽ được truyền từ node Get Product Price)\nconst productData = $input.first().json;\nconst currentPrice = productData.current_price || body.currentPrice || 0;\n\n// Nếu không có event hoặc dữ liệu lỗi, trả về giá gốc\nif (!event || !inputData.hasEvent) {\n  return [{\n    json: {\n      sku: sku,\n      hasEvent: false,\n      eventDiscount: false,\n      eventInfo: null,\n      display_price: currentPrice,\n      discount_percent: 0,\n      isVIP: false,\n      member_level: 'none'\n    }\n  }];\n}\n\n// Tính toán mức giảm giá\nconst discountPercent = event.discount_percent || 0;\nconst displayPrice = Math.round(currentPrice * (1 - discountPercent / 100));\n\n// Trả về kết quả cuối cùng đã áp dụng giảm giá\nreturn [{\n  json: {\n    sku: sku,\n    hasEvent: true,\n    eventDiscount: true,\n    eventInfo: {\n      name: event.name || event.event_name || 'Sự kiện ưu đãi',\n      discount_percent: discountPercent,\n      start_date: event.start_date || '',\n      end_date: event.end_date || ''\n    },\n    display_price: displayPrice,\n    discount_percent: discountPercent,\n    isVIP: true,\n    member_level: 'event'\n  }\n}];"
+      },
+      "name": "Apply Event Discount",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        288
+      ],
+      "id": "56f7ed53-a137-4773-8113-c982d9f04951"
+    },
+    {
+      "parameters": {
+        "options": {}
       },
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        848,
-        -144
+        1408,
+        368
       ],
-      "id": "7"
+      "id": "5c86d850-7db5-4612-a543-75839a8b080b"
     }
   ],
+  "pinData": {},
   "connections": {
     "Webhook": {
       "main": [
@@ -156,7 +252,7 @@
       "main": [
         [
           {
-            "node": "Apply Event Discount",
+            "node": "Get Product Price",
             "type": "main",
             "index": 0
           }
@@ -164,6 +260,17 @@
         [
           {
             "node": "No Event Discount",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Product Price": {
+      "main": [
+        [
+          {
+            "node": "Apply Event Discount",
             "type": "main",
             "index": 0
           }
@@ -193,9 +300,16 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   },
-  "id": "event-flow-4-id"
+  "versionId": "84461041-136c-4711-b67d-ab3498ba341e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3f8e0b07a3524070b86d2dae63d790cf492b6aff362528c9cf84df1e9bab9b5c"
+  },
+  "id": "Ab1LCBoL16VAS19a",
+  "tags": []
 }

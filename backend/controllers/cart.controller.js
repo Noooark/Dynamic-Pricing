@@ -237,26 +237,26 @@ exports.calculateCartVIPPrice = async (req, res) => {
           const vipDiscount = vipData.discount_percent || 0;
           const isVIP = vipData.isVIP || false;
 
-           // Tính tổng hợp discount (chỉ tính VIP discount, không tính event discount)
-          let finalPrice = vipPrice;
-          let totalDiscount = vipDiscount;
-          let isEventVIP = isVIP;
-          let memberLevel = vipData.member_level || customer.membership_type?.toLowerCase() || 'silver';
+            // Tính tổng hợp discount (chỉ tính VIP discount, không tính event discount)
+            let finalPrice = vipPrice;
+            let totalDiscount = vipDiscount;
+            let isEventVIP = isVIP;
+            let memberLevel = vipData.member_level || customer.membership_type?.toLowerCase() || 'silver';
 
-           return {
-             ...item,
-             displayPrice: finalPrice,
-             discountPercent: totalDiscount,
-             isVIP: isEventVIP,
-             memberLevel: memberLevel,
-             vipInfo: {
-               originalPrice: item.currentPrice,
-               vipPrice: vipPrice,
-               vipDiscount: vipDiscount,
-               isVIP: isVIP
-             },
-             eventInfo: null
-           };
+            return {
+              ...item,
+              displayPrice: finalPrice,
+              discountPercent: totalDiscount,
+              isVIP: isEventVIP,
+              memberLevel: memberLevel,
+              vipInfo: {
+                originalPrice: item.currentPrice,
+                vipPrice: vipPrice,
+                vipDiscount: vipDiscount,
+                isVIP: isVIP
+              },
+              eventInfo: null
+            };
         } catch (err) {
           console.error(`❌ VIP pricing error for SKU ${item.SKU}:`, err.message);
           console.error(`❌ Error details:`, err.response?.data || err);
