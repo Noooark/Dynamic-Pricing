@@ -94,6 +94,28 @@ export default function AdminDashboard() {
     }
   };
 
+  const runFlow4 = async () => {
+    if (!confirm("Bạn có chắc muốn chạy FLOW 4 - Cập nhật giảm giá theo event?")) {
+      return;
+    }
+
+    setFlowRunning(true);
+    setFlowResult(null);
+
+    try {
+      const response = await api.post("/admin/flow4/run");
+      setFlowResult(response.data);
+      fetchProducts();
+      fetchHistory();
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const error = err as any;
+      setFlowResult({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 4" });
+    } finally {
+      setFlowRunning(false);
+    }
+  };
+
   const updatePrice = async (sku: string) => {
     if (!editingPrice || isNaN(parseFloat(editingPrice))) {
       alert("Vui lòng nhập giá hợp lệ");
@@ -187,6 +209,30 @@ export default function AdminDashboard() {
             }`}
           >
             {flowRunning ? "Đang chạy..." : "Chạy FLOW 1 Ngay"}
+          </button>
+        </div>
+
+        {/* Flow 4 Button */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">FLOW 4: Cập nhật giảm giá theo Event</h2>
+          <div className="text-gray-600 mb-4">
+            <p>Hệ thống sẽ kiểm tra các event đang active và cập nhật giá sản phẩm theo discount của event:</p>
+            <ul className="list-disc list-inside mt-2">
+              <li>Kiểm tra các event đang diễn ra</li>
+              <li>Lấy event có discount cao nhất</li>
+              <li>Áp dụng discount lên giá hiện tại</li>
+              <li>Cập nhật giá mới cho tất cả sản phẩm</li>
+              <li>Ghi log lịch sử thay đổi giá</li>
+            </ul>
+          </div>
+          <button
+            onClick={runFlow4}
+            disabled={flowRunning}
+            className={`px-6 py-3 rounded font-bold text-white transition ${
+              flowRunning ? "bg-gray-400 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-700"
+            }`}
+          >
+            {flowRunning ? "Đang chạy..." : "Chạy FLOW 4 Ngay"}
           </button>
 
           {flowResult && (

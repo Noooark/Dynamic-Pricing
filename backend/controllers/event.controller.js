@@ -53,7 +53,7 @@ exports.checkEvent = async (req, res) => {
     let currentPrice = 0;
     let productInfo = null;
 
-    if (SKU) {
+    if (SKU && SKU !== '') {
       const { data: product, error: productError } = await supabase
         .from('products')
         .select('current_price, product_name')

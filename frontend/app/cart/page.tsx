@@ -14,6 +14,11 @@ interface CartItem {
   discountPercent?: number;
   isVIP?: boolean;
   memberLevel?: string;
+  eventInfo?: {
+    name: string;
+    discount_percent: number;
+    hasEvent: boolean;
+  } | null;
 }
 
 interface CustomerInfo {
@@ -134,8 +139,13 @@ export default function CartPage() {
         CustomerID: user.customer_id
       });
       
+      console.log("VIP calculation response:", res.data);
+      
       if (res.data.cart?.items) {
         setCart(res.data.cart.items);
+      } else if (res.data.items) {
+        // Fallback in case response structure is different
+        setCart(res.data.items);
       }
     } catch (err) {
       console.error("Lỗi tính giá VIP:", err);
@@ -276,26 +286,29 @@ export default function CartPage() {
                         <p className="text-sm text-gray-600">SKU: {item.SKU}</p>
                         
                         {/* Price Display */}
-                        <div className="mt-2 flex items-center space-x-4">
-                          <div>
-                            <span className="text-lg font-bold text-gray-900">
-                              {(item.displayPrice || item.currentPrice).toLocaleString("vi-VN")} ₫
-                            </span>
-                            {item.displayPrice && item.displayPrice !== item.currentPrice && (
-                              <span className="ml-2 text-sm text-gray-500 line-through">
-                                {item.currentPrice.toLocaleString("vi-VN")} ₫
+                        <div className="mt-2 flex flex-col gap-2">
+                          <div className="flex items-center space-x-4">
+                            <div>
+                              <span className="text-lg font-bold text-gray-900">
+                                {(item.displayPrice || item.currentPrice).toLocaleString("vi-VN")} ₫
+                              </span>
+                              {item.displayPrice && item.displayPrice !== item.currentPrice && (
+                                <span className="ml-2 text-sm text-gray-500 line-through">
+                                  {item.currentPrice.toLocaleString("vi-VN")} ₫
+                                </span>
+                              )}
+                            </div>
+                            
+                            {item.isVIP && (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                                VIP {item.memberLevel?.toUpperCase() || 'SILVER'}
+                                {item.discountPercent && (
+                                  <span className="ml-1 font-semibold">-{item.discountPercent}%</span>
+                                )}
                               </span>
                             )}
                           </div>
                           
-                          {item.isVIP && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                              VIP {item.memberLevel?.toUpperCase() || 'SILVER'}
-                              {item.discountPercent && (
-                                <span className="ml-1 font-semibold">-{item.discountPercent}%</span>
-                              )}
-                            </span>
-                          )}
                         </div>
                       </div>
 
