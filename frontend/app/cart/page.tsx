@@ -137,7 +137,8 @@ export default function CartPage() {
     ));
 
     try {
-      await API.post("/cart/update-quantity", {
+      // Sử dụng PUT thay vì POST, và endpoint đúng là /cart/update
+      await API.put("/cart/update", {
         CustomerID: user.customer_id,
         SKU,
         quantity
@@ -356,7 +357,10 @@ export default function CartPage() {
                       {/* Quantity Controls */}
                       <div className="flex items-center space-x-3">
                         <button
-                          onClick={() => updateQuantity(item.SKU, item.quantity - 1)}
+                          onClick={() => {
+                            const newQty = Math.max(0, item.quantity - 1);
+                            updateQuantity(item.SKU, newQty);
+                          }}
                           disabled={updating}
                           className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Giảm số lượng"
@@ -369,7 +373,10 @@ export default function CartPage() {
                         <span className="w-14 text-center font-bold text-lg">{item.quantity}</span>
                         
                         <button
-                          onClick={() => updateQuantity(item.SKU, item.quantity + 1)}
+                          onClick={() => {
+                            const newQty = item.quantity + 1;
+                            updateQuantity(item.SKU, newQty);
+                          }}
                           disabled={updating}
                           className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Tăng số lượng"
