@@ -2,7 +2,7 @@
 const express = require("express");
 const router = express.Router();
 
-const { login, getProducts, updateProductPrice, getPriceHistory, runFlow1 } = require("../controllers/admin.controller");
+const { login, getProducts, updateProductPrice, getPriceHistory, runFlow1, runFlow4 } = require("../controllers/admin.controller");
 
 // POST /admin/login - Đăng nhập admin
 router.post("/login", login);
@@ -18,5 +18,8 @@ router.get("/price-history", getPriceHistory);
 
 // POST /admin/flow1/run - Chạy FLOW 1
 router.post("/flow1/run", runFlow1);
+
+// POST /admin/flow4/run - Chạy FLOW 4
+router.post("/flow4/run", runFlow4);
 
 module.exports = router;

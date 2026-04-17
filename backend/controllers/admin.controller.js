@@ -248,3 +248,48 @@ exports.runFlow1 = async (req, res) => {
     });
   }
 };
+
+/**
+ * Chạy FLOW 4 (Cập nhật giảm giá theo Event) - Gọi n8n webhook
+ */
+exports.runFlow4 = async (req, res) => {
+  try {
+    console.log("🚀 Running FLOW 4 via n8n webhook...");
+
+    // Gọi n8n webhook để chạy FLOW 4
+    const axios = require('axios');
+    const n8nWebhookUrl = process.env.N8N_FLOW4_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow4";
+
+    console.log("📍 Webhook URL:", n8nWebhookUrl);
+
+    const response = await axios.post(
+      n8nWebhookUrl,
+      {
+        action: "run_flow4",
+        timestamp: new Date().toISOString()
+      },
+      { timeout: 30000 } // 30 giây timeout
+    );
+
+    console.log("✅ FLOW 4 webhook response:", response.data);
+
+    res.json({
+      message: "FLOW 4 đã được kích hoạt qua n8n. Vui lòng kiểm tra email để xem kết quả.",
+      n8nResponse: response.data,
+      note: "n8n sẽ xử lý và gửi email báo cáo kết quả"
+    });
+
+  } catch (err) {
+    console.error("❌ Run FLOW 4 error:", err.message);
+    if (err.response) {
+      console.error("📛 Response status:", err.response.status);
+      console.error("📛 Response data:", err.response.data);
+      console.error("📛 Response headers:", err.response.headers);
+    }
+    res.status(500).json({ 
+      message: "Lỗi khi gọi FLOW 4", 
+      error: err.message,
+      note: "Vui lòng kiểm tra n8n webhook URL và kết nối"
+    });
+  }
+};
