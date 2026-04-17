@@ -296,6 +296,7 @@ exports.runFlow2 = async (req, res) => {
 
 /**
  * Chạy FLOW 4 (Cập nhật giảm giá theo Event) - Gọi n8n webhook
+ * Nếu không có event hoạt động thì tự động chạy FLOW 1
  */
 exports.runFlow4 = async (req, res) => {
   try {
@@ -366,7 +367,18 @@ exports.runFlow4 = async (req, res) => {
         const eventName = result.eventInfo.name || "Event";
         message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho event ${eventName}`;
       } else {
-        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động";
+        // Không có event hoạt động - TỰ ĐỘNG CHẠY FLOW 1
+        console.log("⚠️  Không có event hoạt động, tự động chạy FLOW 1...");
+        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động, đang chạy FLOW 1 thay thế...";
+        
+        // Gọi FLOW 1
+        const flow1Result = await runFlow1Internal();
+        
+        if (flow1Result.success) {
+          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, đã chạy FLOW 1 thay thế. ${flow1Result.message}`;
+        } else {
+          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, chạy FLOW 1 thay thế thất bại: ${flow1Result.error}`;
+        }
       }
     } else if (result && Array.isArray(result)) {
       // Xử lý response array (dự phòng)
@@ -377,10 +389,32 @@ exports.runFlow4 = async (req, res) => {
       if (discountPercent > 0) {
         message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho ${affectedProducts} sản phẩm`;
       } else {
-        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động";
+        // Không có event hoạt động - TỰ ĐỘNG CHẠY FLOW 1
+        console.log("⚠️  Không có event hoạt động, tự động chạy FLOW 1...");
+        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động, đang chạy FLOW 1 thay thế...";
+        
+        // Gọi FLOW 1
+        const flow1Result = await runFlow1Internal();
+        
+        if (flow1Result.success) {
+          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, đã chạy FLOW 1 thay thế. ${flow1Result.message}`;
+        } else {
+          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, chạy FLOW 1 thay thế thất bại: ${flow1Result.error}`;
+        }
       }
     } else {
-      message = "Thực hiện FLOW 4 thành công - Không có event hoạt động";
+      // Không có event hoạt động - TỰ ĐỘNG CHẠY FLOW 1
+      console.log("⚠️  Không có event hoạt động, tự động chạy FLOW 1...");
+      message = "Thực hiện FLOW 4 thành công - Không có event hoạt động, đang chạy FLOW 1 thay thế...";
+      
+      // Gọi FLOW 1
+      const flow1Result = await runFlow1Internal();
+      
+      if (flow1Result.success) {
+        message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, đã chạy FLOW 1 thay thế. ${flow1Result.message}`;
+      } else {
+        message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, chạy FLOW 1 thay thế thất bại: ${flow1Result.error}`;
+      }
     }
 
     res.json({
@@ -414,3 +448,47 @@ exports.runFlow4 = async (req, res) => {
     });
   }
 };
+
+/**
+ * Hàm chạy FLOW 1 nội bộ (dùng cho FLOW 4 gọi)
+ */
+async function runFlow1Internal() {
+  try {
+    console.log("🚀 Running FLOW 1 internally via n8n webhook...");
+
+    // Gọi n8n webhook để chạy FLOW 1
+    const axios = require('axios');
+    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow1";
+
+    console.log("📍 FLOW 1 Webhook URL:", n8nWebhookUrl);
+
+    const response = await axios.post(
+      n8nWebhookUrl,
+      {
+        action: "run_flow1_from_flow4",
+        timestamp: new Date().toISOString()
+      },
+      { timeout: 30000 } // 30 giây timeout
+    );
+
+    console.log("✅ FLOW 1 internal webhook response:", response.data);
+
+    return {
+      success: true,
+      message: "FLOW 1 đã được kích hoạt thành công qua n8n",
+      n8nResponse: response.data
+    };
+
+  } catch (err) {
+    console.error("❌ Run FLOW 1 internal error:", err.message);
+    if (err.response) {
+      console.error("📛 FLOW 1 Response status:", err.response.status);
+      console.error("📛 FLOW 1 Response data:", err.response.data);
+      console.error("📛 FLOW 1 Response headers:", err.response.headers);
+    }
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
