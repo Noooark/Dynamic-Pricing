@@ -205,108 +205,46 @@ exports.getPriceHistory = async (req, res) => {
 };
 
 /**
- * Chạy FLOW 1 (Tự động giảm giá theo đối thủ)
+ * Chạy FLOW 1 (Tự động giảm giá theo đối thủ) - Gọi n8n webhook
  */
 exports.runFlow1 = async (req, res) => {
   try {
-    // Lấy danh sách sản phẩm
-    const { data: products, error: productsError } = await supabase
-      .from('products')
-      .select('*');
+    console.log("🚀 Running FLOW 1 via n8n webhook...");
 
-    if (productsError) {
-      throw productsError;
-    }
+    // Gọi n8n webhook để chạy FLOW 1
+    const axios = require('axios');
+    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow1";
 
-    const results = [];
-    let updatedCount = 0;
+    console.log("📍 Webhook URL:", n8nWebhookUrl);
 
-    // Duyệt qua từng sản phẩm để tính toán giá mới
-    for (const product of products) {
-      const current = parseFloat(product.current_price) || 0;
-      const competitor = parseFloat(product.competitor_price) || 0;
-      const cost = parseFloat(product.cost_price) || 0;
-      const floor = parseFloat(product.floor_price) || 0;
-      const maxDiscount = parseFloat(product.max_discount_percent || 15) / 100;
+    const response = await axios.post(
+      n8nWebhookUrl,
+      {
+        action: "run_flow1",
+        timestamp: new Date().toISOString()
+      },
+      { timeout: 30000 } // 30 giây timeout
+    );
 
-      let proposed = competitor - 1000;
-      let reason = "Giảm theo giá đối thủ";
-
-      if (proposed < floor) {
-        proposed = floor;
-        reason = "Điều chỉnh về Floor Price";
-      }
-
-      const minMarginPrice = cost * 1.12;
-      if (proposed < minMarginPrice) {
-        proposed = Math.ceil(minMarginPrice);
-        reason += " | Bảo vệ margin tối thiểu";
-      }
-
-      const maxAllowedPrice = current * (1 - maxDiscount);
-      if (proposed < maxAllowedPrice) {
-        proposed = Math.ceil(maxAllowedPrice);
-        reason += " | Giới hạn giảm tối đa";
-      }
-
-      const needsUpdate = (current - proposed) >= 500;
-
-      if (needsUpdate) {
-        // Cập nhật giá sản phẩm
-        const { data: updatedProduct, error: updateError } = await supabase
-          .from('products')
-          .update({
-            current_price: Math.round(proposed),
-            last_updated: new Date().toISOString()
-          })
-          .eq('sku', product.sku)
-          .select()
-          .single();
-
-        if (updateError) {
-          throw updateError;
-        }
-
-        // Ghi log vào price_history
-        const { error: logError } = await supabase
-          .from('price_history')
-          .insert({
-            sku: product.sku,
-            old_price: current,
-            new_price: Math.round(proposed),
-            reason: reason,
-            competitor_price: competitor,
-            flow_name: "FLOW 1 - Tự động giảm giá theo đối thủ"
-          });
-
-        if (logError) {
-          console.error(`Log error for ${product.sku}:`, logError.message);
-        }
-
-        results.push({
-          sku: product.sku,
-          product_name: product.product_name,
-          old_price: current,
-          new_price: Math.round(proposed),
-          competitor_price: competitor,
-          reason: reason,
-          change: Math.round(proposed) - current
-        });
-
-        updatedCount++;
-      }
-    }
+    console.log("✅ FLOW 1 webhook response:", response.data);
 
     res.json({
-      message: `FLOW 1 đã chạy xong. Cập nhật ${updatedCount} sản phẩm.`,
-      results: results,
-      totalProducts: products.length,
-      updatedCount: updatedCount,
-      unchangedCount: products.length - updatedCount
+      message: "FLOW 1 đã được kích hoạt qua n8n. Vui lòng kiểm tra email để xem kết quả.",
+      n8nResponse: response.data,
+      note: "n8n sẽ xử lý và gửi email báo cáo kết quả"
     });
 
   } catch (err) {
-    console.error("Run FLOW 1 error:", err.message);
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    console.error("❌ Run FLOW 1 error:", err.message);
+    if (err.response) {
+      console.error("📛 Response status:", err.response.status);
+      console.error("📛 Response data:", err.response.data);
+      console.error("📛 Response headers:", err.response.headers);
+    }
+    res.status(500).json({ 
+      message: "Lỗi khi gọi FLOW 1", 
+      error: err.message,
+      note: "Vui lòng kiểm tra n8n webhook URL và kết nối"
+    });
   }
 };
