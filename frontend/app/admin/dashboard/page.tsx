@@ -32,7 +32,14 @@ export default function AdminDashboard() {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [flowRunning, setFlowRunning] = useState(false);
-  const [flowResult, setFlowResult] = useState<{
+  const [flow1Result, setFlow1Result] = useState<{
+    message?: string;
+    totalProducts?: number;
+    updatedCount?: number;
+    unchangedCount?: number;
+    error?: string;
+  } | null>(null);
+  const [flow4Result, setFlow4Result] = useState<{
     message?: string;
     totalProducts?: number;
     updatedCount?: number;
@@ -78,17 +85,17 @@ export default function AdminDashboard() {
     }
 
     setFlowRunning(true);
-    setFlowResult(null);
+    setFlow1Result(null);
 
     try {
       const response = await api.post("/admin/flow1/run");
-      setFlowResult(response.data);
+      setFlow1Result(response.data);
       fetchProducts();
       fetchHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
-      setFlowResult({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 1" });
+      setFlow1Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 1" });
     } finally {
       setFlowRunning(false);
     }
@@ -100,19 +107,19 @@ export default function AdminDashboard() {
     }
 
     setFlowRunning(true);
-    setFlowResult(null);
+    setFlow4Result(null);
 
     try {
       const response = await api.post("/admin/flow4", {
         date: new Date().toISOString().split('T')[0]
       });
-      setFlowResult(response.data);
+      setFlow4Result(response.data);
       fetchProducts();
       fetchHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
-      setFlowResult({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 4" });
+      setFlow4Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 4" });
     } finally {
       setFlowRunning(false);
     }
@@ -212,6 +219,21 @@ export default function AdminDashboard() {
           >
             {flowRunning ? "Đang chạy..." : "Chạy FLOW 1 Ngay"}
           </button>
+
+          {flow1Result && (
+            <div className={`mt-4 p-4 rounded ${flow1Result.error ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+              {flow1Result.error ? (
+                <p>{flow1Result.error}</p>
+              ) : (
+                <div>
+                  <p className="font-bold">{flow1Result.message}</p>
+                  {flow1Result.totalProducts && <p>Tổng sản phẩm: {flow1Result.totalProducts}</p>}
+                  {flow1Result.updatedCount !== undefined && <p>Đã cập nhật: {flow1Result.updatedCount}</p>}
+                  {flow1Result.unchangedCount !== undefined && <p>Không thay đổi: {flow1Result.unchangedCount}</p>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Flow 4 Button */}
@@ -237,16 +259,16 @@ export default function AdminDashboard() {
             {flowRunning ? "Đang chạy..." : "Chạy FLOW 4 Ngay"}
           </button>
 
-          {flowResult && (
-            <div className={`mt-4 p-4 rounded ${flowResult.error ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-              {flowResult.error ? (
-                <p>{flowResult.error}</p>
+          {flow4Result && (
+            <div className={`mt-4 p-4 rounded ${flow4Result.error ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+              {flow4Result.error ? (
+                <p>{flow4Result.error}</p>
               ) : (
                 <div>
-                  <p className="font-bold">{flowResult.message}</p>
-                  <p>Tổng sản phẩm: {flowResult.totalProducts}</p>
-                  <p>Đã cập nhật: {flowResult.updatedCount}</p>
-                  <p>Không thay đổi: {flowResult.unchangedCount}</p>
+                  <p className="font-bold">{flow4Result.message}</p>
+                  {flow4Result.totalProducts && <p>Tổng sản phẩm: {flow4Result.totalProducts}</p>}
+                  {flow4Result.updatedCount !== undefined && <p>Đã cập nhật: {flow4Result.updatedCount}</p>}
+                  {flow4Result.unchangedCount !== undefined && <p>Không thay đổi: {flow4Result.unchangedCount}</p>}
                 </div>
               )}
             </div>
