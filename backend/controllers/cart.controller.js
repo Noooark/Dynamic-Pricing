@@ -179,8 +179,8 @@ exports.updateCartQuantity = async (req, res) => {
 };
 
 /**
- * Tính giá VIP cho toàn bộ giỏ hàng (FLOW 3)
- * Gọi n8n webhook cho từng sản phẩm trong giỏ
+ * Tính giá VIP cho toàn bộ giỏ hàng (FLOW 3 + FLOW 4)
+ * Gọi n8n webhook cho từng sản phẩm trong giỏ, sau đó check event
  */
 exports.calculateCartVIPPrice = async (req, res) => {
   try {
@@ -208,13 +208,17 @@ exports.calculateCartVIPPrice = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy khách hàng" });
     }
 
-    // Gọi n8n webhook cho từng sản phẩm
+    // Gọi n8n webhook cho từng sản phẩm (VIP Pricing)
     const axios = require('axios');
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/vip-pricing";
 
     const updatedCart = await Promise.all(
       cart.map(async (item) => {
         try {
+          console.log(`🔍 Calling VIP Pricing for SKU ${item.SKU}...`);
+          console.log(`📡 n8n URL: ${n8nWebhookUrl}`);
+          console.log(`📤 Payload: { SKU: "${item.SKU}", CustomerID: "${CustomerID}" }`);
+
           const response = await axios.post(
             n8nWebhookUrl,
             {
@@ -224,17 +228,73 @@ exports.calculateCartVIPPrice = async (req, res) => {
             { timeout: 5000 }
           );
 
+          console.log(`✅ VIP Pricing response:`, response.data);
+
           const vipData = response.data;
+
+          // Lấy giá VIP từ n8n
+          const vipPrice = vipData.display_price || item.currentPrice;
+          const vipDiscount = vipData.discount_percent || 0;
+          const isVIP = vipData.isVIP || false;
+
+          // Check Event (FLOW 4) - Kiểm tra event discount
+          console.log(`🔍 Calling Event Check for SKU ${item.SKU}...`);
+          console.log(`📡 Event URL: http://168.144.39.198:5678/webhook/event-check`);
+          console.log(`📤 Payload: { SKU: "${item.SKU}", date: "${new Date().toISOString().split('T')[0]}" }`);
+
+          const eventResponse = await axios.post(
+            "http://168.144.39.198:5678/webhook/event-check",
+            {
+              date: new Date().toISOString().split('T')[0],
+              SKU: item.SKU
+            },
+            { timeout: 5000 }
+          );
+
+          console.log(`✅ Event Check response:`, eventResponse.data);
+
+          const eventData = eventResponse.data;
+
+          // Tính tổng hợp discount
+          let finalPrice = vipPrice;
+          let totalDiscount = vipDiscount;
+          let isEventVIP = false;
+          let memberLevel = vipData.member_level || customer.membership_type?.toLowerCase() || 'silver';
+
+          if (eventData.hasEvent && eventData.eventDiscount) {
+            // Nếu có event, áp dụng event discount lên giá VIP
+            finalPrice = eventData.display_price;
+            totalDiscount = eventData.discount_percent;
+            isEventVIP = true;
+            memberLevel = 'event';
+          } else if (isVIP) {
+            // Chỉ có VIP discount
+            isEventVIP = true;
+            memberLevel = vipData.member_level || customer.membership_type?.toLowerCase() || 'silver';
+          }
 
           return {
             ...item,
-            displayPrice: vipData.display_price || item.currentPrice,
-            discountPercent: vipData.discount_percent || 0,
-            isVIP: vipData.isVIP || false,
-            memberLevel: vipData.member_level || customer.membership_type?.toLowerCase() || 'silver'
+            displayPrice: finalPrice,
+            discountPercent: totalDiscount,
+            isVIP: isEventVIP,
+            memberLevel: memberLevel,
+            vipInfo: {
+              originalPrice: item.currentPrice,
+              vipPrice: vipPrice,
+              vipDiscount: vipDiscount,
+              isVIP: isVIP
+            },
+            eventInfo: eventData.hasEvent ? {
+              name: eventData.eventInfo?.name,
+              discount_percent: eventData.discount_percent,
+              hasEvent: eventData.hasEvent
+            } : null
           };
         } catch (err) {
-          console.error(`VIP pricing error for SKU ${item.SKU}:`, err.message);
+          console.error(`❌ VIP pricing error for SKU ${item.SKU}:`, err.message);
+          console.error(`❌ Error details:`, err.response?.data || err);
+          
           // Trả về giá gốc nếu có lỗi
           return {
             ...item,

@@ -1,0 +1,201 @@
+{
+  "name": "FLOW 4 - Event Check",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "event-check",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        -112
+      ],
+      "id": "1"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": "public",
+        "table": "events",
+        "additionalFields": {
+          "query": "SELECT * FROM events WHERE is_active = true AND start_date <= $1 AND end_date >= $1",
+          "values": [
+            "={{ $json.body.date || $today }}"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -624,
+        -272
+      ],
+      "id": "2",
+      "name": "Get Active Events",
+      "credentials": {
+        "postgres": {
+          "id": "postgres-credential-id",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const events = $input.all();\nconst currentDate = $json.body.date || new Date().toISOString().split('T')[0];\n\n// Lọc các event đang active (start_date <= today <= end_date)\nconst activeEvents = events.filter(event => {\n  const startDate = new Date(event.start_date);\n  const endDate = new Date(event.end_date);\n  const today = new Date(currentDate);\n  \n  // Set time to 00:00:00 for date comparison\n  startDate.setHours(0, 0, 0, 0);\n  endDate.setHours(23, 59, 59, 999);\n  today.setHours(0, 0, 0, 0);\n  \n  return today >= startDate && today <= endDate;\n});\n\n// Lấy event có discount cao nhất\nconst bestEvent = activeEvents.reduce((best, current) => {\n  if (!best) return current;\n  return current.discount_percent > best.discount_percent ? current : best;\n}, null);\n\nreturn [{\n  json: {\n    hasEvent: !!bestEvent,\n    event: bestEvent,\n    currentDate: currentDate,\n    activeEvents: activeEvents.length,\n    bestDiscount: bestEvent ? bestEvent.discount_percent : 0\n  }\n}];"
+      },
+      "name": "Check Event Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -144
+      ],
+      "id": "3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasEvent }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "If Has Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        272,
+        -144
+      ],
+      "id": "4"
+    },
+    {
+      "parameters": {
+        "functionCode": "const event = $json.event;\nconst discountPercent = event.discount_percent;\n\n// Tính giá sau discount\nconst currentPrice = $json.body.currentPrice || $json.currentPrice || 0;\nconst displayPrice = Math.round(currentPrice * (1 - discountPercent / 100));\n\nreturn [{\n  json: {\n    ...$json,\n    eventDiscount: true,\n    eventInfo: {\n      name: event.name,\n      discount_percent: discountPercent,\n      start_date: event.start_date,\n      end_date: event.end_date\n    },\n    display_price: displayPrice,\n    discount_percent: discountPercent,\n    isVIP: true,\n    member_level: 'event'\n  }\n}];"
+      },
+      "name": "Apply Event Discount",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -200
+      ],
+      "id": "5"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    ...$json,\n    eventDiscount: false,\n    eventInfo: null,\n    display_price: $json.body.currentPrice || $json.currentPrice || 0,\n    discount_percent: 0,\n    isVIP: false,\n    member_level: 'none'\n  }\n}];"
+      },
+      "name": "No Event Discount",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -80
+      ],
+      "id": "6"
+    },
+    {
+      "parameters": {
+        "responseMode": "lastNode",
+        "responseBody": "={\n  \"hasEvent\": {{ $json.hasEvent }},\n  \"eventDiscount\": {{ $json.eventDiscount }},\n  \"display_price\": {{ $json.display_price }},\n  \"discount_percent\": {{ $json.discount_percent }},\n  \"isVIP\": {{ $json.isVIP }},\n  \"member_level\": \"{{ $json.member_level }}\",\n  \"eventInfo\": {{ $json.eventInfo || null }}\n}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        848,
+        -144
+      ],
+      "id": "7"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Active Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Events": {
+      "main": [
+        [
+          {
+            "node": "Check Event Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Event Logic": {
+      "main": [
+        [
+          {
+            "node": "If Has Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Has Event?": {
+      "main": [
+        [
+          {
+            "node": "Apply Event Discount",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Event Discount",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Event Discount": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Event Discount": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "event-flow-4-id"
+}
