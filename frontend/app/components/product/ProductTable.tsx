@@ -1,5 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { useAuth } from "../../context/AuthContext";
+import API from "../../services/api";
+
 interface Product {
   sku: string;
   product_name: string; // Khớp với tên cột trong Supabase
@@ -13,9 +17,39 @@ interface ProductTableProps {
 }
 
 export default function ProductTable({ products }: ProductTableProps) {
+  const { user, isAuthenticated } = useAuth();
+  const [addingSku, setAddingSku] = useState<string | null>(null);
+  const [addedSkus, setAddedSkus] = useState<Set<string>>(new Set());
 
-  const handleAddToCart = (sku: string) => {
-    console.log(`Thêm sản phẩm ${sku} vào giỏ hàng`);
+  const handleAddToCart = async (sku: string) => {
+    if (!isAuthenticated || !user?.customer_id) {
+      alert("Vui lòng đăng nhập để thêm vào giỏ hàng");
+      return;
+    }
+
+    try {
+      setAddingSku(sku);
+      await API.post("/cart/add", {
+        CustomerID: user.customer_id,
+        SKU: sku,
+        quantity: 1
+      });
+      setAddedSkus(prev => new Set([...prev, sku]));
+      
+      // Reset after 2 seconds
+      setTimeout(() => {
+        setAddedSkus(prev => {
+          const next = new Set(prev);
+          next.delete(sku);
+          return next;
+        });
+      }, 2000);
+    } catch (err) {
+      console.error("Lỗi thêm vào giỏ:", err);
+      alert("Không thể thêm sản phẩm vào giỏ");
+    } finally {
+      setAddingSku(null);
+    }
   };
 
   return (
