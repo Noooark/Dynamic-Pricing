@@ -73,3 +73,19 @@ input {
     inset 0 1px 0 rgba(255, 255, 255, 0.65);
   backdrop-filter: blur(18px);
 }
+
+/* Toast notification animation */
+@keyframes fade-in-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-down {
+  animation: fade-in-down 0.3s ease-out;
+}

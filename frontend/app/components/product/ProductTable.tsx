@@ -20,6 +20,8 @@ export default function ProductTable({ products }: ProductTableProps) {
   const { user, isAuthenticated } = useAuth();
   const [addingSku, setAddingSku] = useState<string | null>(null);
   const [addedSkus, setAddedSkus] = useState<Set<string>>(new Set());
+  const [showNotification, setShowNotification] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState("");
 
   const handleAddToCart = async (sku: string) => {
     if (!isAuthenticated || !user?.customer_id) {
@@ -35,6 +37,16 @@ export default function ProductTable({ products }: ProductTableProps) {
         quantity: 1
       });
       setAddedSkus(prev => new Set([...prev, sku]));
+      
+      // Hiển thị thông báo thành công
+      const product = products.find(p => p.sku === sku);
+      setNotificationMessage(`✅ Đã thêm "${product?.product_name || sku}" vào giỏ hàng!`);
+      setShowNotification(true);
+      
+      // Ẩn thông báo sau 3 giây
+      setTimeout(() => {
+        setShowNotification(false);
+      }, 3000);
       
       // Reset after 2 seconds
       setTimeout(() => {
@@ -54,6 +66,16 @@ export default function ProductTable({ products }: ProductTableProps) {
 
   return (
     <div className="overflow-x-auto">
+      {/* Notification Toast */}
+      {showNotification && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg animate-fade-in-down">
+          <div className="flex items-center space-x-2">
+            <span className="text-lg">✓</span>
+            <span className="font-medium">{notificationMessage}</span>
+          </div>
+        </div>
+      )}
+
       <table className="min-w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-slate-200/80 bg-slate-50/80">
