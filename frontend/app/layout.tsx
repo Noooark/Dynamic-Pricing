@@ -1,25 +1,29 @@
 // app/layout.tsx
-import type { Metadata } from "next";
+"use client";
+
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Header from "./components/Header";
 import { AuthProvider } from "./context/AuthContext";
+import { usePathname } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Khoi Store - Dynamic Pricing",
-  description: "Website bán hàng với giá thông minh",
-};
+const inter = Inter({ subsets: ["latin"] });
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Ẩn header nếu đang ở trang admin
+  const pathname = usePathname();
+  const isAdminPage = pathname.startsWith('/admin');
+
   return (
     <html lang="vi">
-      <body>
+      <body className={inter.className}>
         <AuthProvider>
-          <Header />
-          <main>{children}</main>
+          {!isAdminPage && <Header />}
+          <main className={!isAdminPage ? "p-6" : ""}>{children}</main>
         </AuthProvider>
       </body>
     </html>

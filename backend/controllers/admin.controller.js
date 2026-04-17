@@ -154,32 +154,52 @@ exports.getPriceHistory = async (req, res) => {
   try {
     const { sku, limit = 50 } = req.query;
 
+    console.log("🔍 Getting price history:", { sku, limit });
+
     let query = supabase
       .from('price_history')
-      .select(`
-        *,
-        products (product_name)
-      `)
+      .select('*')
       .order('timestamp', { ascending: false })
       .limit(parseInt(limit));
 
     if (sku) {
+      console.log(`🔍 Filtering by SKU: ${sku}`);
       query = query.eq('sku', sku);
     }
 
     const { data: history, error } = await query;
 
     if (error) {
+      console.error("❌ Price history query error:", error);
       throw error;
     }
 
+    console.log(`✅ Price history found: ${history.length} records`);
+
+    // Nếu có SKU, lấy tên sản phẩm riêng
+    let historyWithNames = history;
+    if (sku) {
+      const { data: product, error: productError } = await supabase
+        .from('products')
+        .select('product_name')
+        .eq('sku', sku)
+        .maybeSingle();
+
+      if (!productError && product) {
+        historyWithNames = history.map(item => ({
+          ...item,
+          product_name: product.product_name
+        }));
+      }
+    }
+
     res.json({
-      history: history,
+      history: historyWithNames,
       total: history.length
     });
 
   } catch (err) {
-    console.error("Get price history error:", err.message);
+    console.error("❌ Get price history error:", err.message);
     res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
