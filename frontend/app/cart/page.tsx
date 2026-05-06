@@ -455,7 +455,7 @@ export default function CartPage() {
             {cart.length > 0 && (
               <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  💡 Nhấn "Tính giá VIP" để nhận ưu đãi thành viên và sự kiện!
+                  💡 Nhấn Tính giá VIP để nhận ưu đãi thành viên và sự kiện!
                 </p>
               </div>
             )}

@@ -18,22 +18,22 @@ export default function Header() {
       <div className="glass-panel mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 rounded-[28px] px-5 py-4 sm:px-6">
         <Link href="/" className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-400 text-lg text-white shadow-lg shadow-blue-200">
-            🛒
+            🏨
           </div>
           <div>
             <p className="text-lg font-black tracking-tight text-slate-900 sm:text-xl">
-              Khoi Store
+              Khoi Hotel
             </p>
             <p className="text-xs font-medium text-slate-500">
-              Dynamic pricing cho cửa hàng điện tử
+              Hệ thống đặt phòng & định giá động
             </p>
           </div>
         </Link>
 
         <nav className="order-3 flex w-full items-center justify-center gap-5 text-sm font-semibold text-slate-600 sm:order-2 sm:w-auto sm:gap-7">
           <Link href="/" className="hover:text-blue-600">Trang chủ</Link>
-          <Link href="/products" className="hover:text-blue-600">Sản phẩm</Link>
-          <Link href="/cart" className="hover:text-blue-600">Giỏ hàng</Link>
+          <Link href="/rooms" className="hover:text-blue-600">Phòng</Link>
+          <Link href="/bookings" className="hover:text-blue-600">Đặt phòng</Link>
           <Link href="/account" className="hover:text-blue-600">Tài khoản</Link>
         </nav>
 

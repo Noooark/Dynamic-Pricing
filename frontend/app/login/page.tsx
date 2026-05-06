@@ -65,9 +65,10 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="glass-panel w-full max-w-md rounded-[32px] border border-white/60 p-8 shadow-[0_24px_70px_rgba(15,23,42,0.12)] sm:p-10">
         <div className="mb-8 text-center">
+          <div className="mb-3 text-4xl">🏨</div>
           <h2 className="text-3xl font-bold text-slate-900">Đăng nhập</h2>
           <p className="mt-2 text-slate-600">
-            Tiếp tục quản lý giá và ưu đãi của bạn
+            Chào mừng trở lại Khoi Hotel
           </p>
         </div>
 

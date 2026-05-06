@@ -46,32 +46,49 @@ exports.addToCart = async (req, res) => {
       return res.status(400).json({ message: "Thiếu CustomerID hoặc SKU" });
     }
 
-    // Kiểm tra sản phẩm tồn tại trong Supabase
-    const { data: product, error: productError } = await supabase
-      .from('products')
-      .select('sku, product_name, current_price')
-      .eq('sku', SKU)
+    // Kiểm tra trong bảng rooms trước, nếu không có thì kiểm tra products
+    let itemName = "";
+    let itemPrice = 0;
+
+    const { data: room, error: roomError } = await supabase
+      .from('rooms')
+      .select('id, room_type, current_price')
+      .eq('id', SKU)
       .maybeSingle();
 
-    if (productError || !product) {
-      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+    if (!roomError && room) {
+      itemName = room.room_type;
+      itemPrice = room.current_price;
+    } else {
+      // Fallback: kiểm tra bảng products
+      const { data: product, error: productError } = await supabase
+        .from('products')
+        .select('sku, product_name, current_price')
+        .eq('sku', SKU)
+        .maybeSingle();
+
+      if (productError || !product) {
+        return res.status(404).json({ message: "Phòng/sản phẩm không tồn tại" });
+      }
+      itemName = product.product_name;
+      itemPrice = product.current_price;
     }
 
     // Lấy giỏ hàng hiện tại
     let cart = cartStore.get(CustomerID) || [];
 
-    // Kiểm tra xem sản phẩm đã có trong giỏ chưa
+    // Kiểm tra xem đã có trong giỏ chưa
     const existingIndex = cart.findIndex(item => item.SKU === SKU);
 
     if (existingIndex > -1) {
-      // Cập nhật số lượng
+      // Cập nhật số lượng (số đêm)
       cart[existingIndex].quantity += quantity;
     } else {
       // Thêm mới
       cart.push({
         SKU,
-        product_name: product.product_name,
-        currentPrice: product.current_price,
+        product_name: itemName,
+        currentPrice: itemPrice,
         quantity,
         displayPrice: null,
         discountPercent: 0,
