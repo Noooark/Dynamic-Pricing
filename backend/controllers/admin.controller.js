@@ -213,7 +213,7 @@ exports.runFlow1 = async (req, res) => {
 
     // Gọi n8n webhook để chạy FLOW 1
     const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow1";
+    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/flow1";
 
     console.log("📍 Webhook URL:", n8nWebhookUrl);
 
@@ -458,7 +458,7 @@ async function runFlow1Internal() {
 
     // Gọi n8n webhook để chạy FLOW 1
     const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow1";
+    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/flow1";
 
     console.log("📍 FLOW 1 Webhook URL:", n8nWebhookUrl);
 

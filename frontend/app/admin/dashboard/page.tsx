@@ -30,7 +30,6 @@ interface PriceHistory {
 export default function AdminDashboard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [history, setHistory] = useState<PriceHistory[]>([]);
-  const [loading, setLoading] = useState(false);
   const [flowRunning, setFlowRunning] = useState(false);
   const [flow1Result, setFlow1Result] = useState<{
     message?: string;
@@ -38,6 +37,7 @@ export default function AdminDashboard() {
     updatedCount?: number;
     unchangedCount?: number;
     error?: string;
+    n8nResponse?: Record<string, unknown> | unknown[] | string | number | boolean | null;
   } | null>(null);
   const [flow2Result, setFlow2Result] = useState<{
     message?: string;
@@ -239,6 +239,17 @@ export default function AdminDashboard() {
               <li>Giới hạn giảm tối đa theo % cài đặt</li>
             </ul>
           </div>
+          
+          {/* Webhook URL Info */}
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-800">
+              <span className="font-semibold">🔗 Webhook URL:</span>{" "}
+              <code className="bg-white px-2 py-1 rounded text-xs break-all">
+                https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/flow1
+              </code>
+            </p>
+          </div>
+          
           <button
             onClick={runFlow1}
             disabled={flowRunning}
@@ -259,6 +270,14 @@ export default function AdminDashboard() {
                   {flow1Result.totalProducts && <p>Tổng sản phẩm: {flow1Result.totalProducts}</p>}
                   {flow1Result.updatedCount !== undefined && <p>Đã cập nhật: {flow1Result.updatedCount}</p>}
                   {flow1Result.unchangedCount !== undefined && <p>Không thay đổi: {flow1Result.unchangedCount}</p>}
+                  {flow1Result.n8nResponse !== undefined && flow1Result.n8nResponse !== null && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm font-semibold">Xem chi tiết phản hồi n8n</summary>
+                      <pre className="mt-2 p-2 bg-white rounded text-xs overflow-auto max-h-40">
+                        {JSON.stringify(flow1Result.n8nResponse, null, 2)}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
             </div>
@@ -269,7 +288,7 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">FLOW 2: Xả kho tự động</h2>
           <div className="text-gray-600 mb-4">
-            <p>Hệ thống sẽ tự động kiểm tra tồn kho và áp dụng giảm giá theo thời gian lưu kho:</p>
+            <p>Hệ thống sẽ tự động kiểm tra tồn kho và áp dụng giảm giá theo thờigian lưu kho:</p>
             <ul className="list-disc list-inside mt-2">
               <li>Tồn kho trên 30 ngày: Giảm 10%</li>
               <li>Tồn kho trên 60 ngày: Giảm 20%</li>
@@ -450,7 +469,7 @@ export default function AdminDashboard() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời gian</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thờigian</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sản phẩm</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giá cũ</th>
