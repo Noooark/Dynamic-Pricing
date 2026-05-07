@@ -4,15 +4,17 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import api from "../../services/api";
 
-interface Product {
-  sku: string;
-  product_name: string;
+interface Room {
+  id: string;
+  room_type: string;
+  base_price: number;
   current_price: number;
   cost_price: number;
   floor_price: number;
-  competitor_price: number;
-  max_discount_percent: number;
-  last_updated: string;
+  total_rooms: number;
+  available_rooms: number;
+  location_area?: string;
+  updated_at?: string;
 }
 
 interface PriceHistory {
@@ -28,7 +30,7 @@ interface PriceHistory {
 }
 
 export default function AdminDashboard() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [flowRunning, setFlowRunning] = useState(false);
   const [flow1Result, setFlow1Result] = useState<{
@@ -53,9 +55,7 @@ export default function AdminDashboard() {
     unchangedCount?: number;
     error?: string;
   } | null>(null);
-  const [activeTab, setActiveTab] = useState("products");
-  const [editingSku, setEditingSku] = useState<string | null>(null);
-  const [editingPrice, setEditingPrice] = useState("");
+  const [activeTab, setActiveTab] = useState("rooms");
   const router = useRouter();
 
   useEffect(() => {
@@ -63,17 +63,17 @@ export default function AdminDashboard() {
     if (!isAdminLoggedIn) {
       router.push("/admin/login");
     } else {
-      fetchProducts();
+      fetchRooms();
       fetchHistory();
     }
   }, [router]);
 
-  const fetchProducts = async () => {
+  const fetchRooms = async () => {
     try {
-      const response = await api.get("/admin/products");
-      setProducts(response.data.products);
+      const response = await api.get("/rooms");
+      setRooms(response.data);
     } catch (err) {
-      console.error("Failed to fetch products:", err);
+      console.error("Failed to fetch rooms:", err);
     }
   };
 
@@ -97,7 +97,7 @@ export default function AdminDashboard() {
     try {
       const response = await api.post("/admin/flow1/run");
       setFlow1Result(response.data);
-      fetchProducts();
+      fetchRooms();
       fetchHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,7 +119,7 @@ export default function AdminDashboard() {
     try {
       const response = await api.post("/admin/flow2/run");
       setFlow2Result(response.data);
-      fetchProducts();
+      fetchRooms();
       fetchHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -143,7 +143,7 @@ export default function AdminDashboard() {
         date: new Date().toISOString().split('T')[0]
       });
       setFlow4Result(response.data);
-      fetchProducts();
+      fetchRooms();
       fetchHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,28 +151,6 @@ export default function AdminDashboard() {
       setFlow4Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 4" });
     } finally {
       setFlowRunning(false);
-    }
-  };
-
-  const updatePrice = async (sku: string) => {
-    if (!editingPrice || isNaN(parseFloat(editingPrice))) {
-      alert("Vui lòng nhập giá hợp lệ");
-      return;
-    }
-
-    try {
-      await api.put(`/admin/products/${sku}`, {
-        sku,
-        current_price: parseFloat(editingPrice)
-      });
-      setEditingSku(null);
-      setEditingPrice("");
-      fetchProducts();
-      fetchHistory();
-    } catch (err) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const error = err as any;
-      alert(error.response?.data?.message || "Cập nhật thất bại");
     }
   };
 
@@ -364,14 +342,14 @@ export default function AdminDashboard() {
         {/* Tabs */}
         <div className="flex mb-4 border-b">
           <button
-            onClick={() => setActiveTab("products")}
+            onClick={() => setActiveTab("rooms")}
             className={`px-4 py-2 font-bold ${
-              activeTab === "products"
+              activeTab === "rooms"
                 ? "border-b-2 border-blue-500 text-blue-600"
                 : "text-gray-600 hover:text-gray-800"
             }`}
           >
-            Danh sách sản phẩm
+            Danh sách phòng
           </button>
           <button
             onClick={() => setActiveTab("history")}
@@ -385,76 +363,44 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Products Tab */}
-        {activeTab === "products" && (
+        {/* Rooms Tab */}
+        {activeTab === "rooms" && (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tên sản phẩm</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loại phòng</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Khu vực</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giá gốc</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giá hiện tại</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giá đối thủ</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Floor Price</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Max Discount</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng phòng</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Còn trống</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cập nhật</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {products.map((product) => (
-                  <tr key={product.sku}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.sku}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.product_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {editingSku === product.sku ? (
-                        <input
-                          type="number"
-                          value={editingPrice}
-                          onChange={(e) => setEditingPrice(e.target.value)}
-                          className="w-32 px-2 py-1 border rounded"
-                          autoFocus
-                        />
-                      ) : (
-                        `${formatCurrency(product.current_price)} ₫`
-                      )}
+                {rooms.map((room) => (
+                  <tr key={room.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{room.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-semibold">{room.room_type}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{room.location_area || "-"}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(room.base_price)} ₫</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">{formatCurrency(room.current_price)} ₫</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {room.floor_price ? `${formatCurrency(room.floor_price)} ₫` : "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{room.total_rooms}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        room.available_rooms > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      }`}>
+                        {room.available_rooms}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {product.competitor_price ? `${formatCurrency(product.competitor_price)} ₫` : "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {product.floor_price ? `${formatCurrency(product.floor_price)} ₫` : "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.max_discount_percent}%</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {editingSku === product.sku ? (
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => updatePrice(product.sku)}
-                            className="text-green-600 hover:text-green-900"
-                          >
-                            Lưu
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingSku(null);
-                              setEditingPrice("");
-                            }}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Hủy
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingSku(product.sku);
-                            setEditingPrice(product.current_price.toString());
-                          }}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          Sửa giá
-                        </button>
-                      )}
+                      {room.updated_at ? new Date(room.updated_at).toLocaleString("vi-VN") : "-"}
                     </td>
                   </tr>
                 ))}
