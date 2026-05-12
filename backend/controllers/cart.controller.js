@@ -196,12 +196,12 @@ exports.updateCartQuantity = async (req, res) => {
 };
 
 /**
- * Tính giá VIP cho toàn bộ giỏ hàng (FLOW 3 + FLOW 4)
- * Gọi n8n webhook cho từng sản phẩm trong giỏ, sau đó check event
+ * Tính giá VIP cho toàn bộ giỏ hàng (FLOW 3)
+ * Flow 3 mới nhận room_id + email và trả về data.pricing.finalPrice
  */
 exports.calculateCartVIPPrice = async (req, res) => {
   try {
-    const { CustomerID } = req.body;
+    const { CustomerID, CustomerEmail } = req.body;
 
     if (!CustomerID) {
       return res.status(400).json({ message: "Thiếu CustomerID" });
@@ -214,33 +214,40 @@ exports.calculateCartVIPPrice = async (req, res) => {
       return res.status(404).json({ message: "Giỏ hàng trống" });
     }
 
-    // Lấy thông tin khách hàng từ Supabase
-    const { data: customer, error: customerError } = await supabase
+    // Lấy thông tin khách hàng từ Supabase theo schema mới:
+    // customers(id, full_name, email, rank_id) + customer_ranks(rank_name, discount_percentage)
+    let customerQuery = supabase
       .from('customers')
-      .select('customer_id, name, membership_type, total_orders, total_spent, email')
-      .eq('customer_id', CustomerID)
-      .maybeSingle();
+      .select('id, full_name, email, rank_id, customer_ranks(rank_name, discount_percentage, description)');
+
+    if (CustomerEmail) {
+      customerQuery = customerQuery.eq('email', CustomerEmail);
+    } else {
+      customerQuery = customerQuery.eq('id', CustomerID);
+    }
+
+    const { data: customer, error: customerError } = await customerQuery.maybeSingle();
 
     if (customerError || !customer) {
       return res.status(404).json({ message: "Không tìm thấy khách hàng" });
     }
 
-    // Gọi n8n webhook cho từng sản phẩm (VIP Pricing)
+    // Gọi n8n webhook cho từng phòng (VIP Pricing)
     const axios = require('axios');
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/vip-pricing";
 
     const updatedCart = await Promise.all(
       cart.map(async (item) => {
         try {
-          console.log(`🔍 Calling VIP Pricing for SKU ${item.SKU}...`);
+          console.log(`🔍 Calling FLOW 3 VIP Pricing for room ${item.SKU}...`);
           console.log(`📡 n8n URL: ${n8nWebhookUrl}`);
-          console.log(`📤 Payload: { SKU: "${item.SKU}", CustomerID: "${CustomerID}" }`);
+          console.log(`📤 Payload: { room_id: "${item.SKU}", email: "${customer.email}" }`);
 
           const response = await axios.post(
             n8nWebhookUrl,
             {
-              SKU: item.SKU,
-              CustomerID: CustomerID
+              room_id: item.SKU,
+              email: customer.email
             },
             { timeout: 5000 }
           );
@@ -249,31 +256,33 @@ exports.calculateCartVIPPrice = async (req, res) => {
 
           const vipData = response.data;
 
-          // Lấy giá VIP từ n8n
-          const vipPrice = vipData.display_price || item.currentPrice;
-          const vipDiscount = vipData.discount_percent || 0;
-          const isVIP = vipData.isVIP || false;
+          // Flow 3 mới trả về:
+          // { success, data: { roomId, customerName, pricing: { originalPrice, finalPrice, discountApplied } } }
+          const flowData = vipData.data || vipData;
+          const pricing = flowData.pricing || {};
+          const finalPrice = Number(pricing.finalPrice ?? vipData.final_price ?? item.currentPrice);
+          const originalPrice = Number(pricing.originalPrice ?? vipData.old_price ?? item.currentPrice);
+          const discountText = pricing.discountApplied || vipData.discount_text || "0%";
+          const parsedDiscount = parseFloat(String(discountText).replace('%', '')) || 0;
 
-            // Tính tổng hợp discount (chỉ tính VIP discount, không tính event discount)
-            let finalPrice = vipPrice;
-            let totalDiscount = vipDiscount;
-            let isEventVIP = isVIP;
-            let memberLevel = vipData.member_level || customer.membership_type?.toLowerCase() || 'silver';
-
-            return {
-              ...item,
-              displayPrice: finalPrice,
-              discountPercent: totalDiscount,
-              isVIP: isEventVIP,
-              memberLevel: memberLevel,
-              vipInfo: {
-                originalPrice: item.currentPrice,
-                vipPrice: vipPrice,
-                vipDiscount: vipDiscount,
-                isVIP: isVIP
-              },
-              eventInfo: null
-            };
+          return {
+            ...item,
+            displayPrice: finalPrice,
+            discountPercent: parsedDiscount,
+            discountText,
+            isVIP: parsedDiscount > 0,
+            memberLevel: customer.customer_ranks?.rank_name?.toLowerCase() || 'standard',
+            vipInfo: {
+              roomId: flowData.roomId || item.SKU,
+              customerName: flowData.customerName || customer.full_name,
+              originalPrice,
+              finalPrice,
+              discountApplied: discountText,
+              currency: pricing.currency || "VND",
+              message: flowData.message || vipData.message || "Áp dụng giá VIP thành công"
+            },
+            eventInfo: null
+          };
         } catch (err) {
           console.error(`❌ VIP pricing error for SKU ${item.SKU}:`, err.message);
           console.error(`❌ Error details:`, err.response?.data || err);
@@ -284,7 +293,7 @@ exports.calculateCartVIPPrice = async (req, res) => {
             displayPrice: item.currentPrice,
             discountPercent: 0,
             isVIP: false,
-            memberLevel: customer.membership_type?.toLowerCase() || 'silver',
+            memberLevel: customer.customer_ranks?.rank_name?.toLowerCase() || 'standard',
             error: "Không thể tính giá VIP"
           };
         }
@@ -293,7 +302,7 @@ exports.calculateCartVIPPrice = async (req, res) => {
 
     // Tính tổng tiền
     const subtotal = updatedCart.reduce((sum, item) => sum + (item.currentPrice * item.quantity), 0);
-    const vipTotal = updatedCart.reduce((sum, item) => sum + (item.displayPrice * item.quantity), 0);
+    const vipTotal = updatedCart.reduce((sum, item) => sum + ((item.displayPrice || item.currentPrice) * item.quantity), 0);
     const totalSavings = subtotal - vipTotal;
 
     cartStore.set(CustomerID, updatedCart);
@@ -302,10 +311,12 @@ exports.calculateCartVIPPrice = async (req, res) => {
       message: "Tính giá VIP thành công",
       CustomerID,
       customerInfo: {
-        name: customer.name,
-        membershipType: customer.membership_type,
-        totalOrders: customer.total_orders,
-        totalSpent: customer.total_spent
+        id: customer.id,
+        name: customer.full_name,
+        email: customer.email,
+        rankId: customer.rank_id,
+        membershipType: customer.customer_ranks?.rank_name || 'Standard',
+        discountPercentage: customer.customer_ranks?.discount_percentage || 0
       },
       cart: {
         items: updatedCart,
@@ -352,7 +363,7 @@ exports.clearCart = async (req, res) => {
  */
 exports.checkout = async (req, res) => {
   try {
-    const { CustomerID } = req.body;
+    const { CustomerID, CustomerEmail } = req.body;
 
     if (!CustomerID) {
       return res.status(400).json({ message: "Thiếu CustomerID" });
@@ -364,12 +375,18 @@ exports.checkout = async (req, res) => {
       return res.status(404).json({ message: "Giỏ hàng trống" });
     }
 
-    // Lấy thông tin khách hàng
-    const { data: customer, error: customerError } = await supabase
+    // Lấy thông tin khách hàng theo schema mới
+    let customerQuery = supabase
       .from('customers')
-      .select('*')
-      .eq('customer_id', CustomerID)
-      .maybeSingle();
+      .select('id, full_name, email, rank_id, customer_ranks(rank_name, discount_percentage, description)');
+
+    if (CustomerEmail) {
+      customerQuery = customerQuery.eq('email', CustomerEmail);
+    } else {
+      customerQuery = customerQuery.eq('id', CustomerID);
+    }
+
+    const { data: customer, error: customerError } = await customerQuery.maybeSingle();
 
     if (customerError || !customer) {
       return res.status(404).json({ message: "Không tìm thấy khách hàng" });
@@ -377,23 +394,13 @@ exports.checkout = async (req, res) => {
 
     // Tính tổng
     const subtotal = cart.reduce((sum, item) => sum + (item.currentPrice * item.quantity), 0);
-    const vipTotal = cart.reduce((sum, item) => sum + (item.displayPrice * item.quantity), 0);
+    const vipTotal = cart.reduce((sum, item) => sum + ((item.displayPrice || item.currentPrice) * item.quantity), 0);
     const totalSavings = subtotal - vipTotal;
 
     // Tạo order record (có thể lưu vào Supabase)
     const orderId = `ORD${Date.now()}`;
 
-    // Cập nhật thông tin khách hàng
-    const newTotalOrders = (customer.total_orders || 0) + cart.length;
-    const newTotalSpent = (customer.total_spent || 0) + vipTotal;
-
-    await supabase
-      .from('customers')
-      .update({
-        total_orders: newTotalOrders,
-        total_spent: newTotalSpent
-      })
-      .eq('customer_id', CustomerID);
+    // Schema customers mới hiện chưa có total_orders/total_spent nên không cập nhật thống kê ở đây.
 
     // Xóa giỏ hàng
     cartStore.delete(CustomerID);
@@ -402,6 +409,12 @@ exports.checkout = async (req, res) => {
       message: "Đặt hàng thành công",
       orderId,
       CustomerID,
+      customerInfo: {
+        id: customer.id,
+        name: customer.full_name,
+        email: customer.email,
+        membershipType: customer.customer_ranks?.rank_name || 'Standard'
+      },
       summary: {
         items: cart.length,
         subtotal,

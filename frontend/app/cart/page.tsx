@@ -12,8 +12,18 @@ interface CartItem {
   quantity: number;
   displayPrice?: number;
   discountPercent?: number;
+  discountText?: string;
   isVIP?: boolean;
   memberLevel?: string;
+  vipInfo?: {
+    roomId?: string;
+    customerName?: string;
+    originalPrice?: number;
+    finalPrice?: number;
+    discountApplied?: string;
+    currency?: string;
+    message?: string;
+  };
   eventInfo?: {
     name: string;
     discount_percent: number;
@@ -75,25 +85,6 @@ export default function CartPage() {
       total_orders: user.total_orders || 0,
       total_spent: user.total_spent || 0
     });
-  };
-
-  const addToCart = async (SKU: string) => {
-    if (!user?.customer_id) {
-      router.push("/login");
-      return;
-    }
-
-    try {
-      await API.post("/cart/add", {
-        CustomerID: user.customer_id,
-        SKU,
-        quantity: 1
-      });
-      fetchCart();
-    } catch (err) {
-      console.error("Lỗi thêm vào giỏ:", err);
-      setError("Không thể thêm sản phẩm vào giỏ");
-    }
   };
 
   const removeFromCart = async (SKU: string) => {
@@ -164,20 +155,30 @@ export default function CartPage() {
     try {
       setVipCalculating(true);
       const res = await API.post("/cart/calculate-vip", {
-        CustomerID: user.customer_id
+        CustomerID: user.customer_id,
+        CustomerEmail: user.email
       });
       
       console.log("VIP calculation response:", res.data);
       
       if (res.data.cart?.items) {
         setCart(res.data.cart.items);
+        if (res.data.customerInfo) {
+          setCustomerInfo((prev) => ({
+            customer_id: res.data.customerInfo.id || prev?.customer_id || user.customer_id,
+            name: res.data.customerInfo.name || prev?.name || user.name,
+            membership_type: res.data.customerInfo.membershipType || prev?.membership_type || "Standard",
+            total_orders: prev?.total_orders || 0,
+            total_spent: prev?.total_spent || 0,
+          }));
+        }
       } else if (res.data.items) {
         // Fallback in case response structure is different
         setCart(res.data.items);
       }
     } catch (err) {
       console.error("Lỗi tính giá VIP:", err);
-      setError("Không thể tính giá VIP");
+      showNotification("❌ Không thể tính giá VIP. Vui lòng kiểm tra Flow 3 n8n", 'error');
     } finally {
       setVipCalculating(false);
     }
@@ -191,8 +192,9 @@ export default function CartPage() {
 
     try {
       setUpdating(true);
-      const res = await API.post("/cart/checkout", {
-        CustomerID: user.customer_id
+      await API.post("/cart/checkout", {
+        CustomerID: user.customer_id,
+        CustomerEmail: user.email
       });
       
       alert("Đặt hàng thành công!");
@@ -210,8 +212,10 @@ export default function CartPage() {
     if (!user?.customer_id) return;
 
     try {
-      await API.post("/cart/clear", {
-        CustomerID: user.customer_id
+      await API.delete("/cart/clear", {
+        data: {
+          CustomerID: user.customer_id
+        }
       });
       setCart([]);
     } catch (err) {
@@ -287,7 +291,7 @@ export default function CartPage() {
           <div className="bg-white rounded-lg shadow">
             <div className="p-6 border-b border-gray-200">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Sản phẩm</h2>
+                <h2 className="text-xl font-semibold">Phòng đã chọn</h2>
                 <div className="flex gap-2">
                   <button
                     onClick={calculateVIPPrices}
@@ -313,10 +317,10 @@ export default function CartPage() {
                   <div className="text-6xl mb-4">🛒</div>
                   <p>Giỏ hàng của bạn đang trống</p>
                   <button
-                    onClick={() => router.push("/products")}
+                    onClick={() => router.push("/rooms")}
                     className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
                   >
-                    Tiếp tục mua sắm
+                    Chọn phòng ngay
                   </button>
                 </div>
               ) : (
@@ -325,7 +329,7 @@ export default function CartPage() {
                     <div className="flex items-center space-x-4">
                       <div className="flex-1">
                         <h3 className="font-semibold text-gray-900">{item.product_name}</h3>
-                        <p className="text-sm text-gray-600">SKU: {item.SKU}</p>
+                        <p className="text-sm text-gray-600">Mã phòng: {item.SKU}</p>
                         
                         {/* Price Display */}
                         <div className="mt-2 flex flex-col gap-2">
@@ -344,12 +348,22 @@ export default function CartPage() {
                             {item.isVIP && (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
                                 VIP {item.memberLevel?.toUpperCase() || 'SILVER'}
-                                {item.discountPercent && (
-                                  <span className="ml-1 font-semibold">-{item.discountPercent}%</span>
+                                {(item.discountText || item.discountPercent) && (
+                                  <span className="ml-1 font-semibold">
+                                    -{item.discountText || `${item.discountPercent}%`}
+                                  </span>
                                 )}
                               </span>
                             )}
                           </div>
+                          {item.vipInfo?.message && (
+                            <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                              {item.vipInfo.message}
+                              {item.vipInfo.customerName && (
+                                <span className="font-semibold"> • {item.vipInfo.customerName}</span>
+                              )}
+                            </p>
+                          )}
                           
                         </div>
                       </div>
@@ -409,7 +423,7 @@ export default function CartPage() {
         {/* Order Summary */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow p-6 sticky top-4">
-            <h3 className="text-lg font-semibold mb-4">Tổng đơn hàng</h3>
+            <h3 className="text-lg font-semibold mb-4">Tổng đặt phòng</h3>
             
             <div className="space-y-3 mb-6">
               <div className="flex justify-between text-gray-600">
@@ -419,7 +433,7 @@ export default function CartPage() {
               
               {totalSavings > 0 && (
                 <div className="flex justify-between text-green-600 font-semibold">
-                  <span>Giảm giá:</span>
+                  <span>Giảm giá thành viên:</span>
                   <span>-{totalSavings.toLocaleString("vi-VN")} ₫</span>
                 </div>
               )}
@@ -441,21 +455,21 @@ export default function CartPage() {
                 disabled={updating || cart.length === 0}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {updating ? "Đang xử lý..." : "Thanh toán ngay"}
+                {updating ? "Đang xử lý..." : "Đặt phòng ngay"}
               </button>
               
               <button
-                onClick={() => router.push("/products")}
+                onClick={() => router.push("/rooms")}
                 className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-50"
               >
-                Tiếp tục mua sắm
+                Tiếp tục chọn phòng
               </button>
             </div>
 
             {cart.length > 0 && (
               <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  💡 Nhấn Tính giá VIP để nhận ưu đãi thành viên và sự kiện!
+                  💡 Nhấn Tính giá VIP để Flow 3 n8n áp dụng ưu đãi hạng thành viên cho từng phòng!
                 </p>
               </div>
             )}

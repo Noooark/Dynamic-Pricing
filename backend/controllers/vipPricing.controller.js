@@ -2,12 +2,13 @@ const axios = require("axios");
 
 exports.calculateVIPPrice = async (req, res) => {
   try {
-    const { SKU, CustomerID } = req.body;
+    const { room_id, email, SKU, CustomerID } = req.body;
+    const targetRoomId = room_id || SKU;
 
     // Validate input
-    if (!SKU || !CustomerID) {
+    if (!targetRoomId || !email) {
       return res.status(400).json({
-        message: "Thiếu SKU hoặc CustomerID",
+        message: "Thiếu room_id hoặc email",
       });
     }
 
@@ -15,8 +16,8 @@ exports.calculateVIPPrice = async (req, res) => {
     const response = await axios.post(
       process.env.N8N_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/vip-pricing",
       {
-        SKU,
-        CustomerID,
+        room_id: targetRoomId,
+        email,
       },
       {
         timeout: 5000, // tránh treo request
@@ -25,16 +26,25 @@ exports.calculateVIPPrice = async (req, res) => {
 
     const data = response.data;
 
-    // Validate response từ n8n
-    if (!data || !data.display_price) {
+    const flowData = data?.data || data;
+    const pricing = flowData?.pricing || {};
+
+    // Validate response từ n8n Flow 3 mới
+    if (!flowData || pricing.finalPrice === undefined) {
       return res.status(500).json({
         message: "Pricing service trả dữ liệu không hợp lệ",
+        rawResponse: data,
       });
     }
 
-    // 👉 Trả thẳng về FE
+    // 👉 Trả về cả raw response và format tương thích với FE cũ
     return res.json({
       ...data,
+      room_id: flowData.roomId || targetRoomId,
+      display_price: pricing.finalPrice,
+      discount_percent: parseFloat(String(pricing.discountApplied || "0%").replace("%", "")) || 0,
+      discount_text: pricing.discountApplied || "0%",
+      isVIP: true,
       source: "n8n",
     });
 
