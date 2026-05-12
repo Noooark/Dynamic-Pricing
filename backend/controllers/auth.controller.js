@@ -6,10 +6,16 @@ const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const sanitizeUser = (user) => {
+const sanitizeUser = (user, rankInfo = null) => {
   if (!user) return null;
-  const { password, ...userData } = user;
-  return userData;
+  return {
+    customer_id: user.id,
+    name: user.full_name,
+    email: user.email,
+    membership_type: rankInfo?.rank_name || 'Standard',
+    total_orders: 0,
+    total_spent: 0
+  };
 };
 
 exports.register = async (req, res) => {
@@ -28,7 +34,7 @@ exports.register = async (req, res) => {
 
     const { data: existingUser, error: existingUserError } = await supabase
       .from('customers')
-      .select('customer_id')
+      .select('id')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
@@ -38,37 +44,25 @@ exports.register = async (req, res) => {
       return res.status(409).json({ message: "Email đã được sử dụng" });
     }
 
-    const { count, error: countError } = await supabase
-      .from('customers')
-      .select('*', { count: 'exact', head: true });
-
-    if (countError) throw countError;
-
-    const newIdNumber = (count || 0) + 1;
-    const customerID = `C${String(newIdNumber).padStart(3, "0")}`;
-
     const { data, error: insertError } = await supabase
       .from('customers')
       .insert([
         { 
-          customer_id: customerID, 
-          name: normalizedName, 
-          total_orders: 0, 
-          total_spent: 0, 
-          membership_type: 'Silver', 
-
+          full_name: normalizedName,
           email: normalizedEmail,
           password: Password,
+          rank_id: 1,
         }
       ])
-      .select();
+      .select('id, full_name, email, rank_id')
+      .single();
 
     if (insertError) throw insertError;
 
     res.json({
       message: "Đăng ký thành công trên Supabase",
-      CustomerID: customerID,
-      user: sanitizeUser(data[0])
+      CustomerID: data.id,
+      user: sanitizeUser(data, { rank_name: 'Standard' })
     });
 
   } catch (err) {
@@ -89,7 +83,7 @@ exports.login = async (req, res) => {
 
     const { data: customer, error } = await supabase
       .from('customers')
-      .select('*')
+      .select('id, full_name, email, phone, password, rank_id, customer_ranks(rank_name, discount_percentage, description)')
       .eq('email', normalizedEmail)
       .eq('password', Password)
       .maybeSingle();
@@ -102,7 +96,7 @@ exports.login = async (req, res) => {
 
     res.json({
       message: "Đăng nhập thành công",
-      user: sanitizeUser(customer)
+      user: sanitizeUser(customer, customer.customer_ranks || { rank_name: 'Standard' })
     });
 
   } catch (err) {
