@@ -116,16 +116,33 @@ exports.updateProductPrice = async (req, res) => {
       throw updateError;
     }
 
-    // Ghi log vào price_history
+    // Tìm room_id từ products table (giả sử có trường room_id)
+    // Nếu không có, có thể bỏ qua hoặc dùng cách khác
+    let roomId = null;
+    try {
+      const { data: productData } = await supabase
+        .from('products')
+        .select('room_id')
+        .eq('sku', sku)
+        .maybeSingle();
+      
+      if (productData && productData.room_id) {
+        roomId = productData.room_id;
+      }
+    } catch (e) {
+      // Bảng products có thể không có room_id
+      console.log("Product has no room_id, skipping room association");
+    }
+
+    // Ghi log vào price_history (schema mới)
     const { error: logError } = await supabase
       .from('price_history')
       .insert({
-        sku: sku,
+        room_id: roomId,
         old_price: oldPrice,
         new_price: newPrice,
         reason: "Admin manual update",
-        competitor_price: null,
-        flow_name: "Manual Admin Update"
+        occupancy_rate: null
       });
 
     if (logError) {
@@ -148,59 +165,131 @@ exports.updateProductPrice = async (req, res) => {
 };
 
 /**
- * Lấy lịch sử giá
+ * Lấy lịch sử giá (schema mới: price_history có room_id)
  */
 exports.getPriceHistory = async (req, res) => {
   try {
-    const { sku, limit = 50 } = req.query;
+    const { room_id, limit = 50 } = req.query;
 
-    console.log("🔍 Getting price history:", { sku, limit });
+    console.log("🔍 Getting price history:", { room_id, limit });
+
+    // Kiểm tra Supabase connection
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      console.error("❌ Supabase credentials not configured");
+      return res.status(500).json({ 
+        message: "Supabase chưa được cấu hình", 
+        error: "Thiếu SUPABASE_URL hoặc SUPABASE_KEY" 
+      });
+    }
 
     let query = supabase
       .from('price_history')
-      .select('*')
-      .order('timestamp', { ascending: false })
+      .select(`
+        *,
+        rooms (
+          id,
+          room_type
+        )
+      `)
+      .order('created_at', { ascending: false })
       .limit(parseInt(limit));
 
-    if (sku) {
-      console.log(`🔍 Filtering by SKU: ${sku}`);
-      query = query.eq('sku', sku);
+    if (room_id) {
+      console.log(`🔍 Filtering by room_id: ${room_id}`);
+      query = query.eq('room_id', room_id);
     }
 
     const { data: history, error } = await query;
 
     if (error) {
       console.error("❌ Price history query error:", error);
+      // Kiểm tra nếu lỗi do bảng không tồn tại
+      if (error.message.includes('relation') || error.message.includes('does not exist')) {
+        return res.json({
+          history: [],
+          total: 0,
+          message: "Bảng price_history chưa có dữ liệu"
+        });
+      }
       throw error;
     }
 
-    console.log(`✅ Price history found: ${history.length} records`);
+    console.log(`✅ Price history found: ${history ? history.length : 0} records`);
 
-    // Nếu có SKU, lấy tên sản phẩm riêng
-    let historyWithNames = history;
-    if (sku) {
-      const { data: product, error: productError } = await supabase
-        .from('products')
-        .select('product_name')
-        .eq('sku', sku)
-        .maybeSingle();
-
-      if (!productError && product) {
-        historyWithNames = history.map(item => ({
-          ...item,
-          product_name: product.product_name
-        }));
-      }
-    }
+    // Format lại data cho frontend
+    const historyFormatted = (history || []).map(item => ({
+      id: item.id,
+      room_id: item.room_id,
+      room_type: item.rooms?.room_type || 'Unknown',
+      old_price: item.old_price,
+      new_price: item.new_price,
+      reason: item.reason,
+      created_at: item.created_at
+    }));
 
     res.json({
-      history: historyWithNames,
-      total: history.length
+      history: historyFormatted,
+      total: historyFormatted.length
     });
 
   } catch (err) {
     console.error("❌ Get price history error:", err.message);
-    res.status(500).json({ message: "Lỗi server", error: err.message });
+    console.error("❌ Error stack:", err.stack);
+    res.json({
+      history: [],
+      total: 0,
+      error: err.message
+    });
+  }
+};
+
+/**
+ * Lấy phân tích giá thị trường (market_price_analysis)
+ */
+exports.getMarketAnalysis = async (req, res) => {
+  try {
+    const { room_id, limit = 50 } = req.query;
+
+    console.log("🔍 Getting market analysis:", { room_id, limit });
+
+    let query = supabase
+      .from('market_price_analysis')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit));
+
+    if (room_id) {
+      query = query.eq('room_id', room_id);
+    }
+
+    const { data: analysis, error } = await query;
+
+    if (error) {
+      console.error("❌ Market analysis query error:", error);
+      if (error.message.includes('relation') || error.message.includes('does not exist')) {
+        return res.json({
+          analysis: [],
+          total: 0,
+          message: "Bảng market_price_analysis chưa có dữ liệu"
+        });
+      }
+      throw error;
+    }
+
+    console.log(`✅ Market analysis found: ${analysis ? analysis.length : 0} records`);
+
+    res.json({
+      analysis: analysis || [],
+      total: (analysis || []).length
+    });
+
+  } catch (err) {
+    console.error("❌ Get market analysis error:", err.message);
+    res.json({
+      analysis: [],
+      total: 0,
+      error: err.message
+    });
   }
 };
 
@@ -250,33 +339,65 @@ exports.runFlow1 = async (req, res) => {
 };
 
 /**
- * Chạy FLOW 2 (Xả kho tự động) - Gọi n8n webhook
+ * Chạy FLOW 2 (Theo dõi giá đối thủ) - Gọi n8n webhook
+ * Quét giá từ Google Hotels qua SerpAPI, so sánh và điều chỉnh giá
  */
 exports.runFlow2 = async (req, res) => {
   try {
-    console.log("🚀 Running FLOW 2 - Xả kho tự động via n8n webhook...");
+    console.log("🚀 Running FLOW 2 - Theo dõi giá đối thủ via n8n webhook...");
 
     // Gọi n8n webhook để chạy FLOW 2
     const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_FLOW2_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/flow2";
+    const n8nWebhookUrl = process.env.N8N_FLOW2_WEBHOOK_URL || "https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/flow2";
 
     console.log("📍 Webhook URL:", n8nWebhookUrl);
 
     const response = await axios.post(
       n8nWebhookUrl,
       {
-        action: "run_flow2",
+        action: "run_flow2_competitor_tracking",
         timestamp: new Date().toISOString()
       },
-      { timeout: 60000 } // 60 giây timeout vì FLOW 2 cần thời gian xử lý
+      { timeout: 90000 } // 90 giây timeout vì cần quét SerpAPI
     );
 
     console.log("✅ FLOW 2 webhook response:", response.data);
 
+    // Phân tích kết quả từ flow mới
+    const flowResult = response.data;
+    let comparisonData = [];
+    let summary = {
+      totalRooms: 0,
+      updatedCount: 0,
+      keepCount: 0,
+      reduceCount: 0,
+      increaseCount: 0
+    };
+
+    // Nếu response có dữ liệu so sánh
+    if (flowResult && typeof flowResult === 'object') {
+      if (Array.isArray(flowResult.comparison)) {
+        comparisonData = flowResult.comparison;
+      } else if (Array.isArray(flowResult)) {
+        comparisonData = flowResult;
+      }
+
+      // Tính summary
+      summary.totalRooms = comparisonData.length;
+      comparisonData.forEach(item => {
+        const decision = (item.decision || '').toUpperCase();
+        if (decision === 'REDUCE') summary.reduceCount++;
+        else if (decision === 'INCREASE') summary.increaseCount++;
+        else summary.keepCount++;
+      });
+    }
+
     res.json({
-      message: "FLOW 2 đã được kích hoạt qua n8n. Hệ thống sẽ tự động xả kho và gửi email cho khách hàng.",
-      n8nResponse: response.data,
-      note: "n8n sẽ xử lý: Kiểm tra tồn kho >30 ngày giảm 10%, >60 ngày giảm 20%, và gửi email thông báo"
+      message: "FLOW 2 đã hoàn thành. Hệ thống đã quét giá đối thủ từ Google Hotels và cập nhật giá phòng.",
+      n8nResponse: flowResult,
+      comparison: comparisonData,
+      summary: summary,
+      note: "n8n đã quét giá đối thủ từ Google Hotels, so sánh với giá phòng của mình và điều chỉnh tự động"
     });
 
   } catch (err) {
@@ -289,7 +410,7 @@ exports.runFlow2 = async (req, res) => {
     res.status(500).json({ 
       message: "Lỗi khi gọi FLOW 2", 
       error: err.message,
-      note: "Vui lòng kiểm tra n8n webhook URL và kết nối"
+      note: "Vui lòng kiểm tra n8n webhook URL và kết nối SerpAPI"
     });
   }
 };

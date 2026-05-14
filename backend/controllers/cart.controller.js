@@ -234,7 +234,7 @@ exports.calculateCartVIPPrice = async (req, res) => {
 
     // Gọi n8n webhook cho từng phòng (VIP Pricing)
     const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/vip-pricing";
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || "https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/vip-pricing";
 
     const updatedCart = await Promise.all(
       cart.map(async (item) => {

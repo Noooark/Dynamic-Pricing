@@ -18,15 +18,13 @@ interface Room {
 }
 
 interface PriceHistory {
-  id: number;
-  sku: string;
+  id: string;
+  room_id: string;
+  room_type: string;
   old_price: number;
   new_price: number;
   reason: string;
-  competitor_price: number;
-  flow_name: string;
-  timestamp: string;
-  products?: { product_name: string };
+  created_at: string;
 }
 
 export default function AdminDashboard() {
@@ -41,12 +39,37 @@ export default function AdminDashboard() {
     error?: string;
     n8nResponse?: Record<string, unknown> | unknown[] | string | number | boolean | null;
   } | null>(null);
+  interface ComparisonItem {
+    room_type?: string;
+    khoi_price?: number;
+    competitor_min_price?: number;
+    competitor_name?: string;
+    matching_rooms_count?: number;
+    status?: string;
+    // Legacy fields (for backward compatibility)
+    old_price?: number;
+    new_price?: number;
+    avg_market?: number;
+    decision?: string;
+    competitors_found?: number;
+  }
+
+  interface Flow2Summary {
+    totalRooms?: number;
+    keepCount?: number;
+    reduceCount?: number;
+    increaseCount?: number;
+  }
+
   const [flow2Result, setFlow2Result] = useState<{
     message?: string;
     totalProducts?: number;
     updatedCount?: number;
     unchangedCount?: number;
     error?: string;
+    summary?: Flow2Summary;
+    comparison?: ComparisonItem[];
+    n8nResponse?: unknown;
   } | null>(null);
   const [flow4Result, setFlow4Result] = useState<{
     message?: string;
@@ -109,7 +132,7 @@ export default function AdminDashboard() {
   };
 
   const runFlow2 = async () => {
-    if (!confirm("Bạn có chắc muốn chạy FLOW 2 - Xả kho tự động?")) {
+    if (!confirm("Bạn có chắc muốn chạy FLOW 2 - Theo dõi giá đối thủ? Hệ thống sẽ quét giá từ Google Hotels và điều chỉnh giá phòng.")) {
       return;
     }
 
@@ -264,16 +287,28 @@ export default function AdminDashboard() {
 
         {/* Flow 2 Button */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">FLOW 2: Xả kho tự động</h2>
+          <h2 className="text-xl font-bold mb-4">FLOW 2: Theo dõi giá đối thủ</h2>
           <div className="text-gray-600 mb-4">
-            <p>Hệ thống sẽ tự động kiểm tra tồn kho và áp dụng giảm giá theo thờigian lưu kho:</p>
+            <p>Hệ thống sẽ tự động quét giá đối thủ từ Google Hotels và điều chỉnh giá phòng:</p>
             <ul className="list-disc list-inside mt-2">
-              <li>Tồn kho trên 30 ngày: Giảm 10%</li>
-              <li>Tồn kho trên 60 ngày: Giảm 20%</li>
+              <li>Quét giá từ Google Hotels qua SerpAPI</li>
+              <li>So sánh giá phòng của mình với đối thủ</li>
+              <li>Tự động điều chỉnh: Giảm nếu đắt hơn 22%, Tăng nếu rẻ hơn 22%</li>
               <li>Không giảm dưới Floor Price</li>
               <li>Gửi email thông báo ưu đãi cho khách hàng</li>
             </ul>
           </div>
+          
+          {/* Webhook URL Info */}
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-800">
+              <span className="font-semibold">🔗 Webhook URL:</span>{" "}
+              <code className="bg-white px-2 py-1 rounded text-xs break-all">
+                https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/flow2
+              </code>
+            </p>
+          </div>
+          
           <button
             onClick={runFlow2}
             disabled={flowRunning}
@@ -281,7 +316,7 @@ export default function AdminDashboard() {
               flowRunning ? "bg-gray-400 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"
             }`}
           >
-            {flowRunning ? "Đang chạy..." : "Chạy FLOW 2 Ngay"}
+            {flowRunning ? "Đang quét..." : "Chạy FLOW 2 Ngay"}
           </button>
 
           {flow2Result && (
@@ -291,9 +326,102 @@ export default function AdminDashboard() {
               ) : (
                 <div>
                   <p className="font-bold">{flow2Result.message}</p>
-                  {flow2Result.totalProducts && <p>Tổng sản phẩm: {flow2Result.totalProducts}</p>}
-                  {flow2Result.updatedCount !== undefined && <p>Đã cập nhật: {flow2Result.updatedCount}</p>}
-                  {flow2Result.unchangedCount !== undefined && <p>Không thay đổi: {flow2Result.unchangedCount}</p>}
+                  
+                  {/* Summary Statistics */}
+                  {flow2Result.summary && (
+                    <div className="mt-4 grid grid-cols-4 gap-4">
+                      <div className="bg-white p-3 rounded-lg shadow-sm">
+                        <p className="text-sm text-gray-500">Tổng phòng</p>
+                        <p className="text-2xl font-bold">{flow2Result.summary.totalRooms}</p>
+                      </div>
+                      <div className="bg-green-100 p-3 rounded-lg shadow-sm">
+                        <p className="text-sm text-green-600">Giữ nguyên</p>
+                        <p className="text-2xl font-bold text-green-700">{flow2Result.summary.keepCount}</p>
+                      </div>
+                      <div className="bg-red-100 p-3 rounded-lg shadow-sm">
+                        <p className="text-sm text-red-600">Giảm giá</p>
+                        <p className="text-2xl font-bold text-red-700">{flow2Result.summary.reduceCount}</p>
+                      </div>
+                      <div className="bg-blue-100 p-3 rounded-lg shadow-sm">
+                        <p className="text-sm text-blue-600">Tăng giá</p>
+                        <p className="text-2xl font-bold text-blue-700">{flow2Result.summary.increaseCount}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Comparison Table */}
+                  {flow2Result.comparison && flow2Result.comparison.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="font-bold text-lg mb-3">Báo cáo so sánh giá</h3>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full bg-white rounded-lg overflow-hidden">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại phòng</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá của mình</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá đối thủ thấp nhất</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Đối thủ</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số phòng khớp</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {flow2Result.comparison.map((item, index) => {
+                              const khoiPrice = item.khoi_price || 0;
+                              const competitorPrice = item.competitor_min_price || 0;
+                              const isExpensive = item.status?.includes('Đắt') || khoiPrice > competitorPrice * 1.22;
+                              const statusColor = isExpensive ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
+                              const statusIcon = isExpensive ? '🔴' : '🟢';
+                              const priceDiff = khoiPrice - competitorPrice;
+                              const priceDiffPercent = competitorPrice ? ((priceDiff / competitorPrice) * 100).toFixed(1) : '0';
+                              
+                              return (
+                                <tr key={index} className="hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-sm font-medium">{item.room_type}</td>
+                                  <td className="px-4 py-3 text-sm font-semibold">
+                                    {item.khoi_price?.toLocaleString('vi-VN')} ₫
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-bold text-blue-600">
+                                    {item.competitor_min_price?.toLocaleString('vi-VN')} ₫
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                    {item.competitor_name || '—'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-center">
+                                    <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">
+                                      {item.matching_rooms_count || 0} phòng
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm">
+                                    <div className="flex flex-col gap-1">
+                                      <span className={`px-2 py-1 rounded ${statusColor} font-semibold`}>
+                                        {statusIcon} {item.status || (isExpensive ? 'Đắt' : 'Tốt')}
+                                      </span>
+                                      {priceDiff > 0 && (
+                                        <span className="text-xs text-red-600">
+                                          Cao hơn {priceDiff.toLocaleString('vi-VN')}₫ ({priceDiffPercent}%)
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Raw Response (collapsible) */}
+                  {flow2Result.n8nResponse !== undefined && flow2Result.n8nResponse !== null && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-sm font-semibold">Xem chi tiết phản hồi n8n</summary>
+                      <pre className="mt-2 p-2 bg-white rounded text-xs overflow-auto max-h-64">
+                        {JSON.stringify(flow2Result.n8nResponse, null, 2)}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
             </div>
@@ -415,35 +543,51 @@ export default function AdminDashboard() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thờigian</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sản phẩm</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời gian</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loại phòng</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giá cũ</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giá mới</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thay đổi</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lý do</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flow</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {history.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(item.timestamp).toLocaleString("vi-VN")}
+                {history.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                      Chưa có lịch sử thay đổi giá
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.products?.product_name || "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatCurrency(item.old_price)} ₫
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                      {formatCurrency(item.new_price)} ₫
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{item.reason}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.flow_name}</td>
                   </tr>
-                ))}
+                ) : (
+                  history.map((item) => {
+                    const change = item.new_price - item.old_price;
+                    const changePercent = ((change / item.old_price) * 100).toFixed(1);
+                    return (
+                      <tr key={item.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(item.created_at).toLocaleString("vi-VN")}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {item.room_type || "Unknown"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatCurrency(item.old_price)} ₫
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                          {formatCurrency(item.new_price)} ₫
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <span className={change >= 0 ? "text-red-600" : "text-green-600"}>
+                            {change >= 0 ? "+" : ""}{formatCurrency(change)} ₫ ({change >= 0 ? "+" : ""}{changePercent}%)
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                          {item.reason || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

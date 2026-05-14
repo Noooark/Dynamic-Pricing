@@ -1,0 +1,553 @@
+{
+  "name": "Theo dõi giá phòng đối thủ - Supabase",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Lấy toàn bộ danh sách items từ node trước đó\nconst items = $input.all();\nconst today = new Date();\n\n// Duyệt qua từng item để tính toán\nconst results = items.map(item => {\n  const data = item.json;\n  \n  // 1. Lấy ngày từ cột LastUpdated [cite: 39]\n  const lastUpdated = new Date(data['LastUpdated']);\n  \n  // Kiểm tra nếu ngày không hợp lệ thì bỏ qua hoặc giữ nguyên giá\n  if (isNaN(lastUpdated.getTime())) {\n    return {\n      json: { ...data, error: \"Invalid Date\" }\n    };\n  }\n\n  // 2. Tính số ngày tồn kho [cite: 18]\n  const diffTime = Math.abs(today.getTime() - lastUpdated.getTime());\n  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));\n  \n  // 3. Lấy giá hiện tại và giá sàn [cite: 5, 17]\n  const currentPrice = parseFloat(data['CurrentPrice']) || 0;\n  const floorPrice = parseFloat(data['FloorPrice']) || 0;\n  let newPrice = currentPrice;\n\n  // 4. Áp dụng logic giảm giá Flow 2 [cite: 20, 21]\n  if (diffDays > 60) {\n    newPrice = currentPrice * 0.8; // Giảm 20% [cite: 21]\n  } else if (diffDays > 30) {\n    newPrice = currentPrice * 0.9; // Giảm 10% [cite: 20]\n  }\n\n  // 5. Kiểm tra an toàn giá sàn [cite: 8]\n  if (newPrice < floorPrice) {\n    newPrice = floorPrice;\n  }\n\n  // Trả về dữ liệu đã xử lý\n  return {\n    json: {\n      ...data,\n      calculated_new_price: Math.round(newPrice),\n      days_in_stock: diffDays,\n      is_discounted: newPrice < currentPrice\n    }\n  };\n});\n\nreturn results;"
+      },
+      "id": "2eeca267-450d-4515-b948-19ca3b6a323f",
+      "name": "Function (Tính giá xả kho)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "=[TỔNG HỢP] Ưu đãi xả kho dành riêng cho bạn",
+        "message": "=Chào <b>{{ $json.Name }}</b>,<br><br>\n\nDưới đây là danh sách các sản phẩm đang có giá xả kho tuần này:<br><br>\n\n{{ $json.Products.map(p => \"• <b>\" + p.DisplayName + \"</b><br>   &nbsp;&nbsp;&nbsp;Giá: <span style='color:red'>\" + p.Price.toLocaleString() + \"đ</span>\").join('<br><br>') }}\n\n<br><br>\nTrân trọng!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        848,
+        -32
+      ],
+      "id": "e5f7f241-23ae-45e9-afcc-866d745b20f2",
+      "name": "Send a message",
+      "webhookId": "a98bbdfe-df77-463e-bd72-7c8c304c9c22",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "0P4MLH1Wfm6rFUux",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        -16
+      ],
+      "id": "19c17e52-70d0-409c-964f-0639f2775a83",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = {};\nconst inputItems = $input.all();\n\nfor (const item of inputItems) {\n  // Sửa thành viết thường theo chuẩn Supabase trong ảnh của bạn\n  const email = item.json.email || \"no-email@test.com\"; \n  \n  if (!results[email]) {\n    results[email] = {\n      json: {\n        Name: item.json.name, // Sửa Name -> name\n        Email: email,\n        Products: []\n      }\n    };\n  }\n  \n  // Lấy tên sản phẩm từ trường product_name (viết thường)\n  const pName = item.json.product_name || item.json.sku || \"Sản phẩm\";\n  \n  // Lấy giá từ trường current_price (viết thường)\n  const pPrice = item.json.current_price || 0;\n\n  results[email].json.Products.push({\n    DisplayName: pName, \n    Price: pPrice\n  });\n}\n\nreturn Object.values(results);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        -32
+      ],
+      "id": "69c11dfa-c3e2-47c7-8418-56eee927298c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "products",
+          "mode": "list",
+          "cachedResultName": "products"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -256,
+        -64
+      ],
+      "id": "67c81fbc-0de5-4d03-a60a-3c11b5cad44a",
+      "name": "Select rows from a table",
+      "credentials": {
+        "postgres": {
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "products",
+          "mode": "list",
+          "cachedResultName": "products"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "current_price": "={{ $json.current_price }}",
+            "sku": "={{ $json.sku }}",
+            "last_updated": "={{ $json.last_updated }}"
+          },
+          "matchingColumns": [
+            "sku"
+          ],
+          "schema": [
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "product_name",
+              "displayName": "product_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "current_price",
+              "displayName": "current_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cost_price",
+              "displayName": "cost_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "floor_price",
+              "displayName": "floor_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "competitor_price",
+              "displayName": "competitor_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "max_discount_percent",
+              "displayName": "max_discount_percent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last_updated",
+              "displayName": "last_updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        192,
+        -80
+      ],
+      "id": "cde10653-af6f-42fb-955a-1f4fb9d1d5fa",
+      "name": "Update rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "customers",
+          "mode": "list",
+          "cachedResultName": "customers"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        48,
+        64
+      ],
+      "id": "82b17250-3043-41c3-a3be-405186f8af89",
+      "name": "Select rows from a table1",
+      "credentials": {
+        "postgres": {
+          "id": "gWIaJ9jZEv6RVV1m",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flow2",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -816,
+        640
+      ],
+      "id": "8eb89db5-b451-485e-b98b-cd50205b11e4",
+      "name": "Webhook",
+      "webhookId": "aef8819a-622a-43b4-a55a-8b804aa22ef0"
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search.json?engine=google_hotels&q=kh%C3%A1ch+s%E1%BA%A1n+s%C6%A1n+tr%C3%A0+%C4%90%C3%A0+N%E1%BA%B5ng&gl=vn&hl=vi&currency=VND&check_in_date=2026-05-14&check_out_date=2026-05-15&api_key=11e82c829aa259fac4615cae8a0682b3f843180ef9cdfa180b7a44debf523b5d",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -528,
+        544
+      ],
+      "id": "f5cace68-a85c-4785-870f-5733af646898",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================== CODE ĐÃ SỬA LỖI TYPE ====================\n\nconst serpData = $(\"HTTP Request\").all()[0]?.json || {};\nconst properties = serpData.properties || serpData.hotels || serpData.organic_results || [];\n\nconst ourRooms = $(\"Supabase_Get_All_Rooms\").all();\n\nreturn ourRooms.map(room => {\n  const roomData = room.json || room;\n  \n  // ===== SỬA LỖI TYPE Ở ĐÂY =====\n  const myTypeRaw = roomData.room_type || \"\";\n  const myType = String(myTypeRaw).trim();\n  \n  const myPriceRaw = roomData.current_price || 1000000;\n  const myPrice = typeof myPriceRaw === 'number' \n    ? myPriceRaw \n    : parseInt(String(myPriceRaw)) || 1000000;\n\n  // Mapping từ khóa\n  const roomMapping = {\n    \"Standard Single\": [\"standard\", \"single\", \"tiêu chuẩn\", \"superior\", \"classic\", \"basic\"],\n    \"Deluxe Double\": [\"deluxe\", \"double\", \"superior\", \"king\", \"twin\", \"premium\"],\n    \"Suite Sea View\": [\"suite\", \"sea view\", \"ocean view\", \"hướng biển\", \"seafront\", \"balcony\"],\n    \"Family Room\": [\"family\", \"gia đình\", \"family room\", \"4 người\"]\n  };\n\n  const keywords = roomMapping[myType] || [myType.toLowerCase()];\n\n  const competitorPrices = properties\n    .filter(h => {\n      const title = String(h.title || h.name || h.description || \"\").toLowerCase();\n      if (title.length < 5) return false;\n\n      let score = 0;\n\n      if (title.includes(myType.toLowerCase())) score += 12;\n      \n      keywords.forEach(kw => {\n        if (title.includes(String(kw).toLowerCase())) score += 7;\n      });\n\n      // Fuzzy match\n      const myWords = myType.toLowerCase().split(/[\\s\\-]+/);\n      myWords.forEach(word => {\n        if (word.length > 3 && title.includes(word)) score += 4;\n      });\n\n      // Bonus\n      if (myType.includes(\"Sea\") && (title.includes(\"sea\") || title.includes(\"ocean\"))) score += 10;\n      if (myType.includes(\"Suite\") && title.includes(\"suite\")) score += 10;\n      if (myType.includes(\"Family\") && title.includes(\"family\")) score += 10;\n      if (myType.includes(\"Deluxe\") && title.includes(\"deluxe\")) score += 8;\n\n      return score >= 6;\n    })\n    .map(h => {\n      const rate = h.rate_per_night?.lowest || h.price || h.extracted_price || 0;\n      return typeof rate === 'string' \n        ? parseInt(rate.replace(/[^0-9]/g, '')) || 0 \n        : parseInt(rate) || 0;\n    })\n    .filter(p => p > 200000);\n\n  const avgMarket = competitorPrices.length > 0 \n    ? Math.round(competitorPrices.reduce((a, b) => a + b, 0) / competitorPrices.length)\n    : myPrice;\n\n  let decision = \"KEEP\";\n  let newPrice = myPrice;\n\n  if (myPrice > avgMarket * 1.22) {\n    decision = \"REDUCE\";\n    newPrice = Math.round(avgMarket * 1.06);\n  } else if (myPrice < avgMarket * 0.78) {\n    decision = \"INCREASE\";\n    newPrice = Math.round(avgMarket * 0.95);\n  }\n\n  return {\n    json: {\n      room_id: roomData.id,\n      room_type: myType,\n      old_price: myPrice,\n      new_price: newPrice,\n      avg_market: avgMarket,\n      competitors_found: competitorPrices.length,\n      decision: decision,\n      analysis_date: new Date().toLocaleString(\"vi-VN\")\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        880
+      ],
+      "id": "b04a8e5a-85ba-447b-8d47-c75af4b845de",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "rooms",
+        "filters": {
+          "conditions": []
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -384,
+        880
+      ],
+      "id": "01c3cb67-18f1-406e-8cb7-9722d63f6823",
+      "name": "Supabase_Get_All_Rooms",
+      "credentials": {
+        "supabaseApi": {
+          "id": "P9QvZP1d8z5EeDMH",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://serpapi.com/search.json?engine=google_hotels&q=khách+sạn+Sơn+Trà+Đà+Nẵng&gl=vn&hl=vi&currency=VND&property_token={{ $json.property_token }}&check_in_date=2026-05-14&check_out_date=2026-05-15&api_key=11e82c829aa259fac4615cae8a0682b3f843180ef9cdfa180b7a44debf523b5d",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -176,
+        544
+      ],
+      "id": "7ec5c23f-195c-4f69-8046-afdc3f6605cc",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy danh sách từ ngăn ads và properties\nconst properties = $input.first().json.properties || [];\n\n// Gộp lại thành một danh sách phẳng\nconst allHotels = [ ...properties];\n\nreturn allHotels.map(hotel => {\n  return {\n    json: {\n      hotel_name: hotel.name,\n      // ĐÂY LÀ QUAN TRỌNG NHẤT: Lấy token để node sau đi quét sâu\n      property_token: hotel.property_token, \n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        544
+      ],
+      "id": "740aedb8-fa5b-4667-b8dc-3a9b78769a4d",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chế độ: Run Once For All Items\nconst allItems = $input.all(); // Lấy tất cả khách sạn từ node trước\nlet finalResults = [];\n\n// Duyệt qua từng khách sạn (item)\nallItems.forEach(item => {\n  const hotelDetail = item.json;\n  const featuredPrices = hotelDetail.featured_prices || [];\n  const realName = hotelDetail.properties?.name || hotelDetail.name || \"Unknown Hotel\";\n\n  // Duyệt qua từng giá phòng trong khách sạn đó\n  featuredPrices.forEach(priceItem => {\n    const rooms = priceItem.rooms || [];\n    \n    rooms.forEach(room => {\n      finalResults.push({\n        json: {\n          hotel_name: realName,\n          room_name: room.name,\n          price: priceItem.rate_per_night?.extracted_lowest || 0,\n          source: priceItem.source,\n          beds: room.beds?.map(b => `${b.count} ${b.type}`).join(\", \") || \"N/A\"\n        }\n      });\n    });\n  });\n});\n\nreturn finalResults;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        544
+      ],
+      "id": "6fda5c62-fcae-465d-9f1b-0e31d8f94dbc",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allData = $input.all();\n\nconst myRooms = allData.filter(item => item.json.room_type);\nconst competitorRooms = allData.filter(item => item.json.hotel_name);\n\n// Tính giá sàn trung bình của toàn bộ khu vực để làm phương án dự phòng (Fallback)\nconst allRivalPrices = competitorRooms.map(r => Number(r.json.price) || 0).filter(p => p > 0);\nconst marketMinPrice = allRivalPrices.length > 0 ? Math.min(...allRivalPrices) : 0;\n\nlet comparisonResults = [];\n\nmyRooms.forEach(myRoom => {\n  const myType = (myRoom.json.room_type || '').toLowerCase().trim();\n  const myPrice = myRoom.json.current_price || 0;\n\n  const rivals = competitorRooms.filter(r => {\n    let rivalName = (r.json.room_name || '').toLowerCase().trim();\n    if (!rivalName) return false;\n\n    // === LOGIC MATCHING NÂNG CAO CHO ĐÀ NẴNG ===\n    const matchStandard = (myType.includes('standard') || myType.includes('single')) && \n                          (rivalName.includes('standard') || rivalName.includes('đơn') || rivalName.includes('1 giường') || rivalName.includes('tiêu chuẩn'));\n    \n    const matchDeluxe = myType.includes('deluxe') && (rivalName.includes('deluxe') || rivalName.includes('sang trọng'));\n    \n    const matchSuite = myType.includes('suite') && (rivalName.includes('suite') || rivalName.includes('cao cấp'));\n    \n    const matchFamily = (myType.includes('family') || myType.includes('gia đình')) && \n                        (rivalName.includes('family') || rivalName.includes('gia đình') || rivalName.includes('famil') || rivalName.includes('4 người'));\n\n    const matchView = (myType.includes('sea') || myType.includes('view')) && \n                      (rivalName.includes('sea') || rivalName.includes('biển') || rivalName.includes('hướng'));\n\n    return matchStandard || matchDeluxe || matchSuite || matchFamily || matchView || rivalName.includes(myType);\n  });\n\n  // Xử lý giá trị khi không tìm thấy phòng trùng khớp\n  let minRivalPrice = null;\n  let cheapestRivalName = null;\n  let status = \"\";\n\n  if (rivals.length > 0) {\n    minRivalPrice = Math.min(...rivals.map(r => Number(r.json.price) || 0));\n    const cheapestRival = rivals.find(r => Number(r.json.price) === minRivalPrice);\n    cheapestRivalName = cheapestRival ? cheapestRival.json.hotel_name : \"N/A\";\n    status = myPrice > minRivalPrice ? \"🔴 Đắt\" : \"🟢 Tốt\";\n  } else {\n    // Nếu không khớp loại phòng nào, lấy giá thấp nhất thị trường để Sơn tham khảo\n    minRivalPrice = marketMinPrice;\n    cheapestRivalName = \"Toàn thị trường (Giá sàn)\";\n    status = \"🟡 Tham khảo sàn\";\n  }\n\n  comparisonResults.push({\n    json: {\n      room_type: myRoom.json.room_type,\n      khoi_price: myPrice,\n      competitor_min_price: minRivalPrice,\n      competitor_name: cheapestRivalName,\n      matching_rooms_count: rivals.length,\n      status: status\n    }\n  });\n});\n\nreturn comparisonResults;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        624
+      ],
+      "id": "d4d86443-f88c-435c-9c5c-002869ebdea3",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        384,
+        608
+      ],
+      "id": "f0c3af81-1a2f-4599-bcb2-044599639127",
+      "name": "Merge1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Function (Tính giá xả kho)": {
+      "main": [
+        [
+          {
+            "node": "Update rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        []
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table": {
+      "main": [
+        [
+          {
+            "node": "Function (Tính giá xả kho)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase_Get_All_Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase_Get_All_Rooms": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "cf482d78-d17b-466b-8c64-b3a22877076f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3f8e0b07a3524070b86d2dae63d790cf492b6aff362528c9cf84df1e9bab9b5c"
+  },
+  "id": "unesedG1CZprDcjz",
+  "tags": []
+}
