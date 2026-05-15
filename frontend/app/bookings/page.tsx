@@ -296,22 +296,87 @@ export default function BookingsPage() {
       // Import supabase để lưu vào database
       const { supabase } = await import('@/lib/supabase');
       
-      // First, find the actual customer.id from customers table using user_id
-      // user.customer_id is actually the user_id from auth.users
-      console.log("[Checkout] Looking up customer.id for user:", user.customer_id);
-      const { data: customerData, error: customerError } = await supabase
+      // First, find the actual customer.id from customers table
+      // Try to find by user_id first, then by email as fallback
+      console.log("[Checkout] Looking up customer for user:", user.customer_id, "email:", user.email);
+      let actualCustomerId: string;
+      
+      // Try to find customer by user_id
+      const { data: customerByUserId, error: userIdError } = await supabase
         .from('customers')
-        .select('id')
+        .select('id, user_id, email')
         .eq('user_id', user.customer_id)
-        .single();
+        .maybeSingle();
 
-      if (customerError || !customerData) {
-        console.error("[Checkout] Customer lookup error:", customerError);
-        throw new Error("Không tìm thấy thông tin khách hàng. Vui lòng liên hệ hỗ trợ.");
+      if (userIdError) {
+        console.error("[Checkout] Error querying by user_id:", userIdError);
       }
 
-      const actualCustomerId = customerData.id;
-      console.log("[Checkout] Found customer.id:", actualCustomerId);
+      if (customerByUserId) {
+        // Found customer with matching user_id
+        actualCustomerId = customerByUserId.id;
+        console.log("[Checkout] Found customer by user_id:", actualCustomerId);
+        
+        // Update user_id if it was NULL
+        if (!customerByUserId.user_id) {
+          console.log("[Checkout] Updating customer user_id...");
+          await supabase
+            .from('customers')
+            .update({ user_id: user.customer_id })
+            .eq('id', actualCustomerId);
+        }
+      } else {
+        // Try to find customer by email
+        console.log("[Checkout] Customer not found by user_id, trying email...");
+        const { data: customerByEmail, error: emailError } = await supabase
+          .from('customers')
+          .select('id, user_id, email')
+          .eq('email', user.email)
+          .maybeSingle();
+
+        if (emailError) {
+          console.error("[Checkout] Error querying by email:", emailError);
+        }
+
+        if (customerByEmail) {
+          // Found customer with matching email, update user_id
+          actualCustomerId = customerByEmail.id;
+          console.log("[Checkout] Found customer by email:", actualCustomerId);
+          
+          // Update user_id to link this customer to the current user
+          console.log("[Checkout] Updating customer user_id from", customerByEmail.user_id, "to", user.customer_id);
+          const { error: updateError } = await supabase
+            .from('customers')
+            .update({ user_id: user.customer_id })
+            .eq('id', actualCustomerId);
+
+          if (updateError) {
+            console.error("[Checkout] Error updating user_id:", updateError);
+          }
+        } else {
+          // Customer not found, create new one
+          console.log("[Checkout] Customer not found, creating new customer...");
+          
+          const { data: newCustomer, error: createError } = await supabase
+            .from('customers')
+            .insert({
+              user_id: user.customer_id,
+              full_name: user.name || 'User',
+              email: user.email,
+              rank_id: 1
+            })
+            .select('id')
+            .single();
+
+          if (createError || !newCustomer) {
+            console.error("[Checkout] Error creating customer:", createError);
+            throw new Error("Không thể tạo khách hàng: " + (createError?.message || "Lỗi không xác định"));
+          }
+
+          actualCustomerId = newCustomer.id;
+          console.log("[Checkout] Created new customer.id:", actualCustomerId);
+        }
+      }
       
       // 1. Lưu vào bảng cart
       const cartItemsToInsert = bookings.map(item => ({

@@ -50,21 +50,49 @@ export default function HistoryPage() {
       
       // First, find the actual customer.id from customers table using user_id
       console.log("[HistoryPage] Looking up customer.id...");
+      let actualCustomerId: string;
+      
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
         .select('id')
         .eq('user_id', user.customer_id)
-        .single();
+        .maybeSingle();
 
-      if (customerError || !customerData) {
+      if (customerError) {
         console.error("[HistoryPage] Customer lookup error:", customerError);
         setHistory([]);
         setLoading(false);
         return;
       }
 
-      const actualCustomerId = customerData.id;
-      console.log("[HistoryPage] Found customer.id:", actualCustomerId);
+      if (customerData) {
+        actualCustomerId = customerData.id;
+        console.log("[HistoryPage] Found existing customer.id:", actualCustomerId);
+      } else {
+        // Customer not found, create new one
+        console.log("[HistoryPage] Customer not found, creating new customer...");
+        
+        const { data: newCustomer, error: createError } = await supabase
+          .from('customers')
+          .insert({
+            user_id: user.customer_id,
+            full_name: user.name || 'User',
+            email: user.email,
+            rank_id: 1
+          })
+          .select('id')
+          .single();
+
+        if (createError || !newCustomer) {
+          console.error("[HistoryPage] Error creating customer:", createError);
+          setHistory([]);
+          setLoading(false);
+          return;
+        }
+
+        actualCustomerId = newCustomer.id;
+        console.log("[HistoryPage] Created new customer.id:", actualCustomerId);
+      }
       
       // Lấy danh sách đặt phòng từ bảng cart
       const { data: cartItems, error } = await supabase
