@@ -309,14 +309,93 @@ export const clearCart = async (customer_id: string) => {
 
 /**
  * Trigger Flow 1 via n8n webhook
+ * Saves price changes to price_history table
  */
 export const triggerFlow1 = async () => {
   try {
+    console.log('🚀 [Flow 1] Starting Flow 1...');
     const response = await axios.post(N8N_FLOW1_URL, {
       action: 'run_flow1',
       timestamp: new Date().toISOString()
     }, { timeout: 30000 });
 
+    console.log('[Flow 1] Response received:', response.data);
+    
+    // Process response and save to price_history
+    // Response có thể có nhiều cấu trúc khác nhau:
+    // 1. Array trực tiếp: [{ room1 }, { room2 }]
+    // 2. Object chứa data: { data: [{ room1 }, { room2 }] }
+    // 3. Array chứa object có data: [{ data: [{ room1 }, { room2 }] }]
+    let roomsArray = [];
+    
+    if (Array.isArray(response.data)) {
+      // Trường hợp 1: Array trực tiếp
+      if (response.data.length > 0 && response.data[0].room_type) {
+        roomsArray = response.data;
+      } 
+      // Trường hợp 3: Array chứa object có data field
+      else if (response.data.length > 0 && response.data[0].data && Array.isArray(response.data[0].data)) {
+        roomsArray = response.data[0].data;
+      }
+    } 
+    // Trường hợp 2: Object chứa data array
+    else if (response.data?.data && Array.isArray(response.data.data)) {
+      roomsArray = response.data.data;
+    }
+    
+    console.log('[Flow 1] Extracted rooms array:', roomsArray.length, 'rooms');
+    
+    if (roomsArray.length > 0) {
+      console.log('[Flow 1] Total rooms in response:', roomsArray.length);
+      console.log('[Flow 1] First room:', JSON.stringify(roomsArray[0], null, 2));
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const roomsWithChanges = roomsArray.filter((room: any) => {
+        const needsUpdate = room.NeedsUpdate;
+        console.log(`[Flow 1] Room ${room.room_type}: NeedsUpdate =`, needsUpdate, 'type:', typeof needsUpdate);
+        return needsUpdate === true || needsUpdate === 'true' || needsUpdate === 1 || needsUpdate === '1';
+      });
+      
+      console.log(`[Flow 1] Found ${roomsWithChanges.length} rooms with price changes`);
+      
+      // Save each room's price change to price_history
+      for (const room of roomsWithChanges) {
+        const oldPrice = room.current_price;
+        const newPrice = room.ProposedPrice || room.current_price;
+        const reason = room.Reason || 'Flow 1: Auto price adjustment';
+        
+        console.log(`[Flow 1] Saving price history for room ${room.room_type}:`, {
+          oldPrice,
+          newPrice,
+          reason
+        });
+        
+        // Insert into price_history table (schema không có room_id, chỉ có room_type)
+        const { error: historyError } = await supabase
+          .from('price_history')
+          .insert({
+            room_type: room.room_type,
+            old_price: oldPrice,
+            new_price: newPrice,
+            reason: reason
+          });
+        
+        if (historyError) {
+          console.error(`[Flow 1] Error saving price history for room ${room.id}:`, historyError);
+        } else {
+          console.log(`[Flow 1] Saved price history for room ${room.room_type}`);
+        }
+      }
+      
+      return {
+        message: `Đã cập nhật giá cho ${roomsWithChanges.length} phòng`,
+        totalProducts: roomsArray.length,
+        updatedCount: roomsWithChanges.length,
+        unchangedCount: roomsArray.length - roomsWithChanges.length,
+        n8nResponse: response.data
+      };
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Error triggering Flow 1:', error);
@@ -365,6 +444,7 @@ export const triggerFlow2 = async () => {
       }
       if (response.data.comparison) {
         console.log('[Flow 2] 📈 Price comparison results:', response.data.comparison.length, 'rooms');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         response.data.comparison.forEach((item: any, index: number) => {
           console.log(`[Flow 2] Room ${index + 1}:`, {
             type: item.room_type,
