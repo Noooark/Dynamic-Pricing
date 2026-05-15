@@ -34,6 +34,7 @@ export default function Header() {
           <Link href="/" className="hover:text-blue-600">Trang chủ</Link>
           <Link href="/rooms" className="hover:text-blue-600">Phòng</Link>
           <Link href="/bookings" className="hover:text-blue-600">Đặt phòng</Link>
+          <Link href="/history" className="hover:text-blue-600">Lịch sử</Link>
           <Link href="/account" className="hover:text-blue-600">Tài khoản</Link>
         </nav>
 
