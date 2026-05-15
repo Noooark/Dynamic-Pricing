@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
-import API from "../../services/api";
+import { addToCart } from "@/app/services/api";
 
 interface Room {
   id: string;
@@ -70,11 +70,7 @@ export default function RoomCard({ rooms }: RoomCardProps) {
 
     try {
       setBookingId(roomId);
-      await API.post("/cart/add", {
-        CustomerID: user.customer_id,
-        SKU: roomId,
-        quantity: 1,
-      });
+      await addToCart(user.customer_id, roomId, 1);
       setBookedIds((prev) => new Set([...prev, roomId]));
 
       const room = rooms.find((r) => r.id === roomId);

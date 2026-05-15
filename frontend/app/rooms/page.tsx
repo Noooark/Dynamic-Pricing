@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import RoomCard from "../components/room/RoomCard";
-import API from "../../services/api";
+import { fetchRooms } from "@/app/services/api";
 
 interface Room {
   id: string;
@@ -17,10 +17,6 @@ interface Room {
   updated_at?: string;
 }
 
-function isAxiosError(err: unknown): err is { response?: { data?: unknown }; message?: string } {
-  return typeof err === "object" && err !== null;
-}
-
 export default function RoomsPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,26 +26,17 @@ export default function RoomsPage() {
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
 
   useEffect(() => {
-    console.log("[RoomsPage] Component mounted, fetching rooms...");
+    console.log("[RoomsPage] Component mounted, fetching rooms from Supabase...");
 
-    const fetchRooms = async () => {
+    const loadRooms = async () => {
       try {
-        console.log("[RoomsPage] Calling API.get('/rooms')...");
-        const res = await API.get("/rooms");
-        console.log("[RoomsPage] API response status:", res.status);
-        console.log("[RoomsPage] API response data:", res.data);
-        console.log("[RoomsPage] API response data type:", typeof res.data);
-        console.log("[RoomsPage] API response data is array?", Array.isArray(res.data));
-        if (Array.isArray(res.data)) {
-          console.log("[RoomsPage] Number of rooms:", res.data.length);
-        }
-        setRooms(res.data);
+        console.log("[RoomsPage] Calling fetchRooms() from Supabase...");
+        const data = await fetchRooms();
+        console.log("[RoomsPage] Supabase response:", data);
+        console.log("[RoomsPage] Number of rooms:", data.length);
+        setRooms(data);
       } catch (err) {
-        console.error("[RoomsPage] API ERROR:", err);
-        if (isAxiosError(err)) {
-          console.error("[RoomsPage] Error response:", err.response);
-          console.error("[RoomsPage] Error message:", err.message);
-        }
+        console.error("[RoomsPage] ERROR:", err);
         let errorMessage = "Không thể tải danh sách phòng";
         if (err instanceof Error) errorMessage = err.message;
         setError(errorMessage);
@@ -58,7 +45,7 @@ export default function RoomsPage() {
       }
     };
 
-    fetchRooms();
+    loadRooms();
   }, []);
 
   const roomTypes = Array.from(new Set(rooms.map((r) => r.room_type)));

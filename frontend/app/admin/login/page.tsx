@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import api from "../../services/api";
+import { supabase } from "@/lib/supabase";
 
 export default function AdminLogin() {
   const [username, setUsername] = useState("");
@@ -17,20 +17,68 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const response = await api.post("/admin/login", { username, password });
-      
-      if (response.data) {
-        // Lưu thông tin admin vào localStorage
-        localStorage.setItem("admin", JSON.stringify(response.data.admin));
+      // Test mode: Cho phép login với username/password cố định
+      // Username: admin, Password: admin123
+      if (username === 'admin' && password === 'admin123') {
+        // Lưu thông tin admin vào localStorage (test mode)
+        localStorage.setItem("admin", JSON.stringify({
+          id: 'test-admin-id',
+          username: 'admin',
+          email: 'admin@test.local',
+          role: 'admin',
+          full_name: 'Test Admin'
+        }));
         localStorage.setItem("isAdminLoggedIn", "true");
         
         // Chuyển hướng đến dashboard
         router.push("/admin/dashboard");
+        return;
+      }
+
+      // Nếu không phải test credentials, thử Supabase Auth
+      const adminEmail = `${username}@admin.local`;
+      
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: adminEmail,
+        password: password,
+      });
+
+      if (authError) throw authError;
+
+      if (data.user) {
+        // Kiểm tra xem user có phải admin không (qua bảng admins)
+        const { data: adminData, error: adminError } = await supabase
+          .from('admins')
+          .select('*')
+          .eq('user_id', data.user.id)
+          .eq('role', 'admin')
+          .single();
+
+        if (adminError || !adminData) {
+          await supabase.auth.signOut();
+          throw new Error("Tài khoản này không có quyền admin");
+        }
+
+        localStorage.setItem("admin", JSON.stringify({
+          id: adminData.id,
+          user_id: data.user.id,
+          username: adminData.username,
+          email: adminData.email,
+          role: adminData.role,
+          full_name: adminData.full_name
+        }));
+        localStorage.setItem("isAdminLoggedIn", "true");
+        router.push("/admin/dashboard");
       }
     } catch (err) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const error = err as any;
-      setError(error.response?.data?.message || "Đăng nhập thất bại");
+      console.error("Admin login error:", err);
+      let errorMessage = "Đăng nhập thất bại";
+      
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

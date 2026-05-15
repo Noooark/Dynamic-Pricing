@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
-import API from "../../services/api";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
 export default function RegisterPage() {
@@ -45,20 +44,53 @@ export default function RegisterPage() {
     setMessage(null);
 
     try {
-      const response = await API.post("/auth/register", {
-        Name: formData.name.trim(),
-        Email: formData.email.trim(),
-        Password: formData.password,
+      // Đăng ký bằng Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email.trim(),
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name.trim(),
+          },
+        },
       });
 
-      signIn(response.data.user);
-      setMessage({ type: "success", text: "Đăng ký thành công." });
-      setTimeout(() => router.push("/account"), 1200);
+      if (error) throw error;
+
+      if (data.user) {
+        // Tạo customer record trong database
+        const { error: customerError } = await supabase
+          .from('customers')
+          .insert({
+            user_id: data.user.id,
+            full_name: formData.name.trim(),
+            email: formData.email.trim(),
+            membership_type: 'Standard',
+            rank_id: 1,
+            total_orders: 0,
+            total_spent: 0,
+          });
+
+        if (customerError) throw customerError;
+
+        // Lấy thông tin customer vừa tạo
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('user_id', data.user.id)
+          .single();
+
+        if (customerData) {
+          signIn(customerData);
+          setMessage({ type: "success", text: "Đăng ký thành công!" });
+          setTimeout(() => router.push("/account"), 1200);
+        }
+      }
     } catch (err: unknown) {
       let errorMessage = "Đăng ký thất bại";
 
-      if (axios.isAxiosError(err)) {
-        errorMessage = err.response?.data?.message || errorMessage;
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
 
       setMessage({ type: "error", text: errorMessage });

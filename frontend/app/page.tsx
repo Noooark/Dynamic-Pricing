@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import RoomCard from "./components/room/RoomCard";
-import API from "../services/api";
+import { fetchRooms } from "./services/api";
 
 interface Room {
   id: string;
@@ -27,10 +27,10 @@ export default function Home() {
   const [filterArea, setFilterArea] = useState<string>("");
 
   useEffect(() => {
-    const fetchRooms = async () => {
+    const loadRooms = async () => {
       try {
-        const res = await API.get("/rooms");
-        setRooms(res.data);
+        const data = await fetchRooms();
+        setRooms(data);
       } catch (err) {
         let errorMessage = "Không thể tải danh sách phòng";
         if (err instanceof Error) errorMessage = err.message;
@@ -40,7 +40,7 @@ export default function Home() {
       }
     };
 
-    fetchRooms();
+    loadRooms();
   }, []);
 
   // Lấy danh sách loại phòng và khu vực duy nhất để filter

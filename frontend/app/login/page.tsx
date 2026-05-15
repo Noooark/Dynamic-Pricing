@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
-import API from "../../services/api";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
@@ -41,18 +40,119 @@ export default function LoginPage() {
     setMessage(null);
 
     try {
-      const response = await API.post("/auth/login", {
-        Email: formData.email.trim(),
-        Password: formData.password,
+      // Test mode: Cho phép login với email/password cố định
+      // Email: test@customer.local, Password: test123
+      if (formData.email === 'test@customer.local' && formData.password === 'test123') {
+        const testCustomer = {
+          id: 'test-customer-id',
+          customer_id: 'test-customer-id',
+          name: 'Test Customer',
+          full_name: 'Test Customer',
+          email: 'test@customer.local',
+          membership_type: 'Gold',
+          rank_id: 2,
+          total_orders: 5,
+          total_spent: 5000000,
+          phone: '0123456789'
+        };
+        signIn(testCustomer);
+        setMessage({ type: "success", text: "Chào mừng trở lại Khoi Hotel (Test Mode)" });
+        setTimeout(() => router.push("/account"), 1200);
+        return;
+      }
+
+      // Nếu không phải test credentials, thử Supabase Auth
+      console.log("[Login] Attempting Supabase Auth login with email:", formData.email);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email.trim(),
+        password: formData.password,
       });
-      signIn(response.data.user);
-      setMessage({ type: "success", text: "Chào mừng bạn quay trở lại." });
-      setTimeout(() => router.push("/account"), 1200);
+
+      if (error) {
+        console.error("[Login] Supabase Auth error:", error);
+        throw error;
+      }
+
+      console.log("[Login] Supabase Auth success, user:", data.user);
+
+      if (data.user) {
+        // Lấy thông tin customer từ database
+        const userId = data.user.id;
+        console.log("[Login] Fetching customer data for user_id:", userId);
+        
+        // First, let's check if the customer record exists with this user_id
+        // Schema của bạn không có membership_type, total_orders, total_spent
+        const { data: customerData, error: customerError } = await supabase
+          .from('customers')
+          .select(`
+            id,
+            user_id,
+            full_name,
+            email,
+            phone,
+            rank_id,
+            customer_ranks (
+              rank_name,
+              discount_percentage
+            )
+          `)
+          .eq('user_id', userId)
+          .single();
+
+        console.log("[Login] Query result:", { customerData, customerError });
+
+        if (customerError) {
+          console.error("[Login] Error fetching customer:", customerError);
+          // Also try to check if any customer exists with this email
+          const { data: emailCheck } = await supabase
+            .from('customers')
+            .select('id, user_id, full_name, email')
+            .eq('email', data.user.email)
+            .single();
+          console.log("[Login] Email check result:", emailCheck);
+          
+          throw new Error("Không tìm thấy thông tin khách hàng: " + customerError.message);
+        }
+
+        console.log("[Login] Customer data found:", customerData);
+
+        if (customerData) {
+          console.log("[Login] Full customerData:", JSON.stringify(customerData, null, 2));
+          
+          // Add required fields for AuthUser type
+          // customer_ranks could be an object or array depending on the relationship
+          let rankName = 'Standard';
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ranks = customerData.customer_ranks as any;
+          if (ranks) {
+            if (Array.isArray(ranks)) {
+              rankName = ranks[0]?.rank_name || 'Standard';
+            } else if (typeof ranks === 'object') {
+              rankName = ranks.rank_name || 'Standard';
+            }
+          }
+          
+          console.log("[Login] Determined rankName:", rankName);
+          
+          const customerWithRequiredFields = {
+            ...customerData,
+            id: customerData.user_id,
+            customer_id: customerData.user_id,
+            name: customerData.full_name || customerData.email,
+            membership_type: rankName,
+          };
+          signIn(customerWithRequiredFields);
+          setMessage({ type: "success", text: "Chào mừng trở lại Khoi Hotel" });
+          setTimeout(() => router.push("/account"), 1200);
+        } else {
+          throw new Error("Không tìm thấy thông tin khách hàng");
+        }
+      }
     } catch (err: unknown) {
       let errorMessage = "Đăng nhập thất bại";
 
-      if (axios.isAxiosError(err)) {
-        errorMessage = err.response?.data?.message || errorMessage;
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
 
       setMessage({ type: "error", text: errorMessage });

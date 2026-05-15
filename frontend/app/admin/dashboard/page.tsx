@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import api from "../../services/api";
+import { fetchRooms, fetchPriceHistory } from "@/app/services/api";
 
 interface Room {
   id: string;
@@ -98,24 +98,24 @@ export default function AdminDashboard() {
     if (!isAdminLoggedIn) {
       router.push("/admin/login");
     } else {
-      fetchRooms();
-      fetchHistory();
+      loadRooms();
+      loadHistory();
     }
   }, [router]);
 
-  const fetchRooms = async () => {
+  const loadRooms = async () => {
     try {
-      const response = await api.get("/rooms");
-      setRooms(response.data);
+      const data = await fetchRooms();
+      setRooms(data);
     } catch (err) {
       console.error("Failed to fetch rooms:", err);
     }
   };
 
-  const fetchHistory = async () => {
+  const loadHistory = async () => {
     try {
-      const response = await api.get("/admin/price-history?limit=50");
-      setHistory(response.data.history);
+      const data = await fetchPriceHistory(50);
+      setHistory(data);
     } catch (err) {
       console.error("Failed to fetch history:", err);
     }
@@ -130,14 +130,15 @@ export default function AdminDashboard() {
     setFlow1Result(null);
 
     try {
-      const response = await api.post("/admin/flow1/run");
-      setFlow1Result(response.data);
-      fetchRooms();
-      fetchHistory();
+      const { triggerFlow1 } = await import("@/app/services/api");
+      const response = await triggerFlow1();
+      setFlow1Result(response);
+      loadRooms();
+      loadHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
-      setFlow1Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 1" });
+      setFlow1Result({ error: error.message || "Lỗi khi chạy FLOW 1" });
     } finally {
       setFlowRunning(false);
     }
@@ -152,14 +153,15 @@ export default function AdminDashboard() {
     setFlow2Result(null);
 
     try {
-      const response = await api.post("/admin/flow2/run");
-      setFlow2Result(response.data);
-      fetchRooms();
-      fetchHistory();
+      const { triggerFlow2 } = await import("@/app/services/api");
+      const response = await triggerFlow2();
+      setFlow2Result(response);
+      loadRooms();
+      loadHistory();
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
-      setFlow2Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 2" });
+      setFlow2Result({ error: error.message || "Lỗi khi chạy FLOW 2" });
     } finally {
       setFlowRunning(false);
     }
@@ -174,16 +176,59 @@ export default function AdminDashboard() {
     setFlow4Result(null);
 
     try {
-      const response = await api.post("/admin/flow4", {
-        date: new Date().toISOString().split('T')[0]
-      });
-      setFlow4Result(response.data);
-      fetchRooms();
-      fetchHistory();
+      console.log("[Flow4] Starting Flow 4...");
+      const { triggerFlow4 } = await import("@/app/services/api");
+      const response = await triggerFlow4();
+      console.log("[Flow4] Response:", response);
+      
+      // Parse response to ensure correct format
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let flow4Response: any = {};
+      
+      // If response is an array, check if rooms have update_reason (event info)
+      if (Array.isArray(response)) {
+        // Check if any room has update_reason containing event info
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const roomWithEvent = response.find((room: any) => room.update_reason && room.update_reason.includes('Sự kiện'));
+        const eventInfo = roomWithEvent ? {
+          event_name: roomWithEvent.update_reason.replace('Sự kiện: ', ''),
+          increase_percent: roomWithEvent.increase_percent || 0
+        } : null;
+        
+        flow4Response = {
+          message: `Đã cập nhật giá cho ${response.length} phòng`,
+          updatedCount: response.length,
+          hasEvent: !!eventInfo,
+          eventInfo: eventInfo,
+          n8nResponse: response
+        };
+      } else if (typeof response === 'string') {
+        try {
+          flow4Response = JSON.parse(response);
+        } catch {
+          flow4Response = { message: response, hasEvent: false };
+        }
+      } else if (typeof response === 'object' && response !== null) {
+        flow4Response = response;
+        
+        // Ensure hasEvent and eventInfo are set correctly
+        if (flow4Response.eventInfo || (flow4Response.event_info && typeof flow4Response.event_info === 'object')) {
+          flow4Response.hasEvent = true;
+          flow4Response.eventInfo = flow4Response.eventInfo || flow4Response.event_info;
+        } else if (flow4Response.hasEvent === undefined) {
+          flow4Response.hasEvent = false;
+        }
+      }
+      
+      console.log("[Flow4] Processed response:", flow4Response);
+      setFlow4Result(flow4Response);
+      loadRooms();
+      loadHistory();
     } catch (err) {
+      console.error("[Flow4] Error:", err);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
-      setFlow4Result({ error: error.response?.data?.message || "Lỗi khi chạy FLOW 4" });
+      setFlow4Result({ error: error.message || "Lỗi khi chạy FLOW 4" });
     } finally {
       setFlowRunning(false);
     }

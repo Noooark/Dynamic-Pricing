@@ -12,6 +12,7 @@ const cartRoutes = require("./routes/cart.routes");
 const eventRoutes = require("./routes/event.routes");
 const adminRoutes = require("./routes/admin.routes");
 
+
 const app = express();
 app.use(cors({
   origin: [

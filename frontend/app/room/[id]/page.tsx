@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import API from "../../services/api";
+import { fetchRoomById, addToCart } from "@/app/services/api";
 import { useAuth } from "../../context/AuthContext";
 
 interface Room {
@@ -65,11 +65,11 @@ export default function RoomDetailPage() {
   const id = params.id as string;
 
   useEffect(() => {
-    const fetchRoom = async () => {
+    const loadRoom = async () => {
       try {
         setLoading(true);
-        const res = await API.get(`/rooms/${id}`);
-        setRoom(res.data);
+        const data = await fetchRoomById(id);
+        setRoom(data);
       } catch (err) {
         console.error("Lỗi lấy thông tin phòng:", err);
         setError("Không thể tải thông tin phòng");
@@ -78,7 +78,7 @@ export default function RoomDetailPage() {
       }
     };
 
-    if (id) fetchRoom();
+    if (id) loadRoom();
   }, [id]);
 
   const handleBookRoom = async () => {
@@ -92,11 +92,7 @@ export default function RoomDetailPage() {
 
     try {
       setAddingToCart(true);
-      await API.post("/cart/add", {
-        CustomerID: user.customer_id,
-        SKU: room.id,
-        quantity: nights,
-      });
+      await addToCart(user.customer_id, room.id, nights);
       setAddedToCart(true);
       setTimeout(() => setAddedToCart(false), 2000);
     } catch (err) {
