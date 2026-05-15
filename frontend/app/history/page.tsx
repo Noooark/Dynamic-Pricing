@@ -46,7 +46,25 @@ export default function HistoryPage() {
     
     try {
       setLoading(true);
-      console.log("[HistoryPage] Fetching booking history for customer:", user.customer_id);
+      console.log("[HistoryPage] Fetching booking history for user:", user.customer_id);
+      
+      // First, find the actual customer.id from customers table using user_id
+      console.log("[HistoryPage] Looking up customer.id...");
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user.customer_id)
+        .single();
+
+      if (customerError || !customerData) {
+        console.error("[HistoryPage] Customer lookup error:", customerError);
+        setHistory([]);
+        setLoading(false);
+        return;
+      }
+
+      const actualCustomerId = customerData.id;
+      console.log("[HistoryPage] Found customer.id:", actualCustomerId);
       
       // Lấy danh sách đặt phòng từ bảng cart
       const { data: cartItems, error } = await supabase
@@ -58,7 +76,7 @@ export default function HistoryPage() {
             current_price
           )
         `)
-        .eq('customer_id', user.customer_id)
+        .eq('customer_id', actualCustomerId)
         .order('created_at', { ascending: false });
 
       if (error) {

@@ -285,7 +285,7 @@ export default function BookingsPage() {
       return;
     }
 
-    if (!user?.customer_id) {
+    if (!user) {
       showNotification("⚠️ Vui lòng đăng nhập để đặt phòng", "error");
       return;
     }
@@ -296,9 +296,26 @@ export default function BookingsPage() {
       // Import supabase để lưu vào database
       const { supabase } = await import('@/lib/supabase');
       
+      // First, find the actual customer.id from customers table using user_id
+      // user.customer_id is actually the user_id from auth.users
+      console.log("[Checkout] Looking up customer.id for user:", user.customer_id);
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user.customer_id)
+        .single();
+
+      if (customerError || !customerData) {
+        console.error("[Checkout] Customer lookup error:", customerError);
+        throw new Error("Không tìm thấy thông tin khách hàng. Vui lòng liên hệ hỗ trợ.");
+      }
+
+      const actualCustomerId = customerData.id;
+      console.log("[Checkout] Found customer.id:", actualCustomerId);
+      
       // 1. Lưu vào bảng cart
       const cartItemsToInsert = bookings.map(item => ({
-        customer_id: user.customer_id,
+        customer_id: actualCustomerId,
         room_id: item.SKU,
         quantity: item.quantity,
       }));
