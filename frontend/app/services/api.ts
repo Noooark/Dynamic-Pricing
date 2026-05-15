@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { supabase, N8N_FLOW1_URL, N8N_FLOW2_URL, N8N_FLOW4_URL } from '@/lib/supabase';
+import { supabase, N8N_FLOW1_URL, N8N_FLOW2_URL, N8N_FLOW3_URL, N8N_FLOW4_URL } from '@/lib/supabase';
 
 // API client for n8n webhooks (optional, for admin actions)
 const API = axios.create({
@@ -367,6 +367,114 @@ export const triggerFlow4 = async (date?: string) => {
   } catch (error) {
     console.error('Error triggering Flow 4:', error);
     throw error;
+  }
+};
+
+/**
+ * Calculate VIP price for a room (Flow 3 - VIP Pricing)
+ * Gọi n8n Flow 3 webhook để tính giá VIP
+ */
+export const calculateVIPPriceForRoom = async (
+  room_id: string,
+  email: string,
+  quantity: number = 1
+) => {
+  console.log('🔌 [API] calculateVIPPriceForRoom called with:', { room_id, email, quantity });
+  
+  try {
+    // Gọi n8n Flow 3 webhook để tính giá VIP
+    console.log('🌐 [API] Calling n8n Flow 3 webhook at:', N8N_FLOW3_URL);
+    
+    const requestBody = {
+      room_id,
+      email,
+      quantity,
+      CustomerID: email // Dùng email làm CustomerID
+    };
+    
+    console.log('📦 [API] Request body:', JSON.stringify(requestBody, null, 2));
+    
+    const response = await axios.post(
+      N8N_FLOW3_URL,
+      requestBody,
+      { 
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('📥 [API] n8n Flow 3 response:', response.data);
+    
+    // Xử lý response từ n8n Flow 3
+    const data = response.data;
+    const flowData = data?.data || data;
+    const pricing = flowData?.pricing || {};
+    
+    if (flowData && pricing.finalPrice !== undefined) {
+      const result = {
+        ...data,
+        room_id: flowData.roomId || room_id,
+        display_price: pricing.finalPrice,
+        discount_percent: parseFloat(String(pricing.discountApplied || "0%").replace("%", "")) || 0,
+        discount_text: pricing.discountApplied || "0%",
+        isVIP: true,
+        member_level: flowData.memberLevel || "Silver",
+        source: "n8n-flow3",
+      };
+      
+      console.log('✅ [API] VIP price calculation result:', result);
+      return result;
+    } else {
+      console.warn('[API] n8n response invalid, using fallback calculation');
+      // Fallback: tính giá đơn giản nếu n8n trả về không hợp lệ
+      return {
+        room_id,
+        display_price: 0,
+        discount_percent: 0,
+        discount_text: "0%",
+        isVIP: false,
+        member_level: "Silver",
+        source: "fallback",
+        error: "Invalid n8n response"
+      };
+    }
+  } catch (error) {
+    console.error('❌ [API] Error calling n8n Flow 3:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('[API] Axios error details:', {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+    }
+    // Nếu n8n không khả dụng, trả về null để frontend xử lý
+    return null;
+  }
+};
+
+/**
+ * Check event discount for a product/room
+ * Kiểm tra xem có sự kiện nào đang diễn ra không
+ */
+export const checkEventDiscount = async (date?: string, SKU?: string) => {
+  try {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const response = await axios.post(
+      `${API_URL}/event/check`,
+      {
+        date: date || new Date().toISOString().split('T')[0],
+        SKU
+      },
+      { timeout: 10000 }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error('Error checking event discount:', error);
+    return null;
   }
 };
 

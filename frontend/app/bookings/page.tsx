@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
-import { fetchCartItems, removeFromCart as removeCartItem, updateCartQuantity as updateCartQty, clearCart as clearCartFn } from "@/app/services/api";
+import { fetchCartItems, removeFromCart as removeCartItem, updateCartQuantity as updateCartQty, clearCart as clearCartFn, calculateVIPPriceForRoom } from "@/app/services/api";
 
 interface BookingItem {
   SKU: string;
@@ -140,8 +140,111 @@ export default function BookingsPage() {
   };
 
   const calculateVIPPrices = async () => {
-    // Note: VIP calculation requires n8n Flow 3, which is not implemented in Supabase-only mode
-    showNotification("⚠️ Tính năng tính giá VIP yêu cầu backend. Vui lòng liên hệ admin.", "error");
+    console.log('🔍 [VIP CALC] Starting VIP price calculation...');
+    console.log('[VIP CALC] User:', user);
+    console.log('[VIP CALC] Bookings:', bookings);
+
+    if (!user?.customer_id || !user?.email) {
+      console.warn('⚠️ [VIP CALC] Missing user info - customer_id:', user?.customer_id, 'email:', user?.email);
+      showNotification("⚠️ Vui lòng đăng nhập với email để tính giá VIP", "error");
+      return;
+    }
+
+    if (bookings.length === 0) {
+      console.warn('⚠️ [VIP CALC] No bookings in cart');
+      showNotification("⚠️ Giỏ đặt phòng trống", "error");
+      return;
+    }
+
+    try {
+      setVipCalculating(true);
+      console.log('🚀 [VIP CALC] Starting to calculate VIP prices for', bookings.length, 'rooms');
+      console.log('[VIP CALC] n8n Flow 3 URL:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL);
+      
+      // Tính giá VIP cho từng phòng trong giỏ
+      let hasError = false;
+      const updatedBookings = await Promise.all(
+        bookings.map(async (item, index) => {
+          console.log(`📋 [VIP CALC] Processing room ${index + 1}/${bookings.length}:`, {
+            SKU: item.SKU,
+            room_id: item.SKU,
+            email: user.email,
+            quantity: item.quantity,
+            currentPrice: item.currentPrice
+          });
+
+          try {
+            // Gọi API tính giá VIP cho từng room (qua n8n Flow 3)
+            console.log(`🔌 [VIP CALC] Calling n8n Flow 3 for room ${item.SKU}...`);
+            const vipResult = await calculateVIPPriceForRoom(
+              item.SKU, // room_id
+              user.email,
+              item.quantity
+            );
+
+            console.log(`📥 [VIP CALC] Received result for room ${item.SKU}:`, vipResult);
+
+            if (vipResult && vipResult.display_price !== undefined && vipResult.display_price > 0) {
+              console.log(`✅ [VIP CALC] VIP price calculated for room ${item.SKU}:`, {
+                originalPrice: item.currentPrice,
+                vipPrice: vipResult.display_price,
+                discount: vipResult.discount_percent,
+                isVIP: vipResult.isVIP,
+                source: vipResult.source
+              });
+
+              return {
+                ...item,
+                displayPrice: vipResult.display_price,
+                discountPercent: vipResult.discount_percent || 0,
+                isVIP: vipResult.isVIP || false,
+                memberLevel: vipResult.member_level || user.membership_type || "Silver"
+              };
+            } else if (vipResult === null) {
+              // n8n không khả dụng
+              console.warn(`⚠️ [VIP CALC] n8n service unavailable for room ${item.SKU}`);
+              hasError = true;
+            } else {
+              console.warn(`⚠️ [VIP CALC] Invalid result for room ${item.SKU}, using original price`);
+            }
+          } catch (err) {
+            console.error(`❌ [VIP CALC] Error calculating VIP price for room ${item.SKU}:`, err);
+            hasError = true;
+          }
+          // Nếu lỗi, giữ nguyên giá cũ
+          return {
+            ...item,
+            displayPrice: item.currentPrice,
+            discountPercent: 0,
+            isVIP: false
+          };
+        })
+      );
+
+      console.log('📊 [VIP CALC] Final updated bookings:', updatedBookings);
+      setBookings(updatedBookings);
+      
+      // Đếm số phòng được áp dụng VIP
+      const vipCount = updatedBookings.filter(b => b.isVIP).length;
+      console.log(`📈 [VIP CALC] VIP count: ${vipCount}/${bookings.length}`);
+      
+      if (hasError && vipCount === 0) {
+        showNotification(
+          "⚠️ Không thể kết nối dịch vụ tính giá VIP. Vui lòng kiểm tra n8n hoặc liên hệ admin.",
+          "error"
+        );
+      } else if (vipCount > 0) {
+        showNotification(`✅ Đã tính giá VIP cho ${vipCount}/${bookings.length} phòng`, "success");
+      } else {
+        showNotification("ℹ️ Không có ưu đãi VIP nào được áp dụng", "success");
+      }
+    } catch (err) {
+      console.error("❌ [VIP CALC] Fatal error:", err);
+      showNotification("❌ Không thể tính giá VIP. Vui lòng thử lại.", "error");
+    } finally {
+      setVipCalculating(false);
+      console.log('🏁 [VIP CALC] Calculation completed');
+    }
   };
 
   const clearBookings = async () => {
