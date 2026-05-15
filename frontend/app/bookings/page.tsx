@@ -3,7 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
-import { fetchCartItems, removeFromCart as removeCartItem, updateCartQuantity as updateCartQty, clearCart as clearCartFn } from "@/app/services/api";
+import { calculateVIPPriceForRoom } from "@/app/services/api";
+import { 
+  getTempCart, 
+  removeFromTempCart, 
+  updateTempCartQuantity, 
+  clearTempCart,
+  CartItemTemp 
+} from "@/app/lib/cartStorage";
 
 interface BookingItem {
   SKU: string;
@@ -70,21 +77,31 @@ export default function BookingsPage() {
     fetchCustomerInfo();
   }, [isAuthenticated, user, router]);
 
-  const fetchBookings = async () => {
-    if (!user?.customer_id) return;
+  const fetchBookings = () => {
     try {
       setLoading(true);
-      const data = await fetchCartItems(user.customer_id) as CartItemRaw[];
-      // Map Supabase data to BookingItem format
-      const mappedBookings = data.map((item) => ({
+      console.log("[BookingsPage] Fetching temp cart from localStorage");
+      
+      // Lấy giỏ hàng tạm từ localStorage (không dùng database)
+      const tempCart = getTempCart();
+      console.log("[BookingsPage] Temp cart:", tempCart);
+      
+      // Map to BookingItem format
+      const mappedBookings: BookingItem[] = tempCart.map((item) => ({
         SKU: item.room_id,
-        product_name: item.rooms?.room_type || item.room_id || 'Unknown',
-        currentPrice: item.rooms?.current_price || 0,
+        product_name: item.room_type,
+        currentPrice: item.current_price,
         quantity: item.quantity,
+        displayPrice: item.displayPrice,
+        isVIP: item.isVIP,
+        memberLevel: item.memberLevel,
+        discountPercent: item.discountPercent,
       }));
+      
+      console.log("[BookingsPage] Mapped bookings:", mappedBookings);
       setBookings(mappedBookings);
     } catch (err) {
-      console.error("Lỗi lấy danh sách đặt phòng:", err);
+      console.error("[BookingsPage] Error fetching bookings:", err);
       setError("Không thể tải danh sách đặt phòng: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading(false);
@@ -107,11 +124,12 @@ export default function BookingsPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const removeBooking = async (SKU: string) => {
-    if (!user?.customer_id) return;
+  const removeBooking = (SKU: string) => {
     const item = bookings.find((b) => b.SKU === SKU);
     try {
-      await removeCartItem(user.customer_id, SKU);
+      // Xóa khỏi localStorage
+      removeFromTempCart(SKU);
+      // Cập nhật UI
       setBookings((prev) => prev.filter((b) => b.SKU !== SKU));
       showNotification(`✅ Đã xóa "${item?.product_name || "phòng"}" khỏi danh sách`, "success");
     } catch (err) {
@@ -121,17 +139,18 @@ export default function BookingsPage() {
     }
   };
 
-  const updateNights = async (SKU: string, quantity: number) => {
-    if (!user?.customer_id) return;
+  const updateNights = (SKU: string, quantity: number) => {
     if (quantity <= 0) {
-      await removeBooking(SKU);
+      removeBooking(SKU);
       return;
     }
-    setBookings((prev) =>
-      prev.map((b) => (b.SKU === SKU ? { ...b, quantity } : b))
-    );
     try {
-      await updateCartQty(user.customer_id, SKU, quantity);
+      // Cập nhật trong localStorage
+      updateTempCartQuantity(SKU, quantity);
+      // Cập nhật UI
+      setBookings((prev) =>
+        prev.map((b) => (b.SKU === SKU ? { ...b, quantity } : b))
+      );
     } catch (err) {
       console.error("Lỗi cập nhật số đêm:", err);
       showNotification("❌ Không thể cập nhật số đêm", "error");
@@ -140,14 +159,118 @@ export default function BookingsPage() {
   };
 
   const calculateVIPPrices = async () => {
-    // Note: VIP calculation requires n8n Flow 3, which is not implemented in Supabase-only mode
-    showNotification("⚠️ Tính năng tính giá VIP yêu cầu backend. Vui lòng liên hệ admin.", "error");
+    console.log('🔍 [VIP CALC] Starting VIP price calculation...');
+    console.log('[VIP CALC] User:', user);
+    console.log('[VIP CALC] Bookings:', bookings);
+
+    if (!user?.customer_id || !user?.email) {
+      console.warn('⚠️ [VIP CALC] Missing user info - customer_id:', user?.customer_id, 'email:', user?.email);
+      showNotification("⚠️ Vui lòng đăng nhập với email để tính giá VIP", "error");
+      return;
+    }
+
+    if (bookings.length === 0) {
+      console.warn('⚠️ [VIP CALC] No bookings in cart');
+      showNotification("⚠️ Giỏ đặt phòng trống", "error");
+      return;
+    }
+
+    try {
+      setVipCalculating(true);
+      console.log('🚀 [VIP CALC] Starting to calculate VIP prices for', bookings.length, 'rooms');
+      console.log('[VIP CALC] n8n Flow 3 URL:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL);
+      
+      // Tính giá VIP cho từng phòng trong giỏ
+      let hasError = false;
+      const updatedBookings = await Promise.all(
+        bookings.map(async (item, index) => {
+          console.log(`📋 [VIP CALC] Processing room ${index + 1}/${bookings.length}:`, {
+            SKU: item.SKU,
+            room_id: item.SKU,
+            email: user.email,
+            quantity: item.quantity,
+            currentPrice: item.currentPrice
+          });
+
+          try {
+            // Gọi API tính giá VIP cho từng room (qua n8n Flow 3)
+            console.log(`🔌 [VIP CALC] Calling n8n Flow 3 for room ${item.SKU}...`);
+            const vipResult = await calculateVIPPriceForRoom(
+              item.SKU, // room_id
+              user.email,
+              item.quantity
+            );
+
+            console.log(`📥 [VIP CALC] Received result for room ${item.SKU}:`, vipResult);
+
+            if (vipResult && vipResult.display_price !== undefined && vipResult.display_price > 0) {
+              console.log(`✅ [VIP CALC] VIP price calculated for room ${item.SKU}:`, {
+                originalPrice: item.currentPrice,
+                vipPrice: vipResult.display_price,
+                discount: vipResult.discount_percent,
+                isVIP: vipResult.isVIP,
+                source: vipResult.source
+              });
+
+              return {
+                ...item,
+                displayPrice: vipResult.display_price,
+                discountPercent: vipResult.discount_percent || 0,
+                isVIP: vipResult.isVIP || false,
+                memberLevel: vipResult.member_level || user.membership_type || "Silver"
+              };
+            } else if (vipResult === null) {
+              // n8n không khả dụng
+              console.warn(`⚠️ [VIP CALC] n8n service unavailable for room ${item.SKU}`);
+              hasError = true;
+            } else {
+              console.warn(`⚠️ [VIP CALC] Invalid result for room ${item.SKU}, using original price`);
+            }
+          } catch (err) {
+            console.error(`❌ [VIP CALC] Error calculating VIP price for room ${item.SKU}:`, err);
+            hasError = true;
+          }
+          // Nếu lỗi, giữ nguyên giá cũ
+          return {
+            ...item,
+            displayPrice: item.currentPrice,
+            discountPercent: 0,
+            isVIP: false
+          };
+        })
+      );
+
+      console.log('📊 [VIP CALC] Final updated bookings:', updatedBookings);
+      setBookings(updatedBookings);
+      
+      // Đếm số phòng được áp dụng VIP
+      const vipCount = updatedBookings.filter(b => b.isVIP).length;
+      console.log(`📈 [VIP CALC] VIP count: ${vipCount}/${bookings.length}`);
+      
+      if (hasError && vipCount === 0) {
+        showNotification(
+          "⚠️ Không thể kết nối dịch vụ tính giá VIP. Vui lòng kiểm tra n8n hoặc liên hệ admin.",
+          "error"
+        );
+      } else if (vipCount > 0) {
+        showNotification(`✅ Đã tính giá VIP cho ${vipCount}/${bookings.length} phòng`, "success");
+      } else {
+        showNotification("ℹ️ Không có ưu đãi VIP nào được áp dụng", "success");
+      }
+    } catch (err) {
+      console.error("❌ [VIP CALC] Fatal error:", err);
+      showNotification("❌ Không thể tính giá VIP. Vui lòng thử lại.", "error");
+    } finally {
+      setVipCalculating(false);
+      console.log('🏁 [VIP CALC] Calculation completed');
+    }
   };
 
-  const clearBookings = async () => {
-    if (!user?.customer_id) return;
+  const clearBookings = () => {
     try {
-      await clearCartFn(user.customer_id);
+      // Xóa localStorage
+      clearTempCart();
+      // Cập nhật UI
       setBookings([]);
       showNotification("✅ Đã xóa toàn bộ đặt phòng", "success");
     } catch (err) {
@@ -157,8 +280,98 @@ export default function BookingsPage() {
   };
 
   const checkout = async () => {
-    // Note: Checkout requires backend processing
-    showNotification("⚠️ Tính năng đặt phòng yêu cầu backend. Vui lòng liên hệ admin.", "error");
+    if (bookings.length === 0) {
+      showNotification("⚠️ Giỏ đặt phòng đang trống", "error");
+      return;
+    }
+
+    if (!user?.customer_id) {
+      showNotification("⚠️ Vui lòng đăng nhập để đặt phòng", "error");
+      return;
+    }
+
+    try {
+      showNotification("⏳ Đang xử lý đặt phòng...", "success");
+      
+      // Import supabase để lưu vào database
+      const { supabase } = await import('@/lib/supabase');
+      
+      // 1. Lưu vào bảng cart
+      const cartItemsToInsert = bookings.map(item => ({
+        customer_id: user.customer_id,
+        room_id: item.SKU,
+        quantity: item.quantity,
+      }));
+      
+      console.log("[Checkout] Step 1 - Saving to cart:", cartItemsToInsert);
+      
+      const { data: cartData, error: cartError } = await supabase
+        .from('cart')
+        .upsert(cartItemsToInsert, {
+          onConflict: 'customer_id,room_id'
+        })
+        .select();
+
+      if (cartError) {
+        console.error("[Checkout] Cart error:", cartError);
+        throw new Error("Không thể lưu đặt phòng: " + cartError.message);
+      }
+
+      console.log("[Checkout] Saved to cart:", cartData);
+      
+      // 2. Giảm số phòng còn trống trong bảng rooms
+      console.log("[Checkout] Step 2 - Updating room availability...");
+      
+      // Cập nhật available_rooms cho từng phòng
+      for (const item of bookings) {
+        // Kiểm tra xem còn đủ phòng không
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .select('available_rooms')
+          .eq('id', item.SKU)
+          .single();
+
+        if (roomError) {
+          console.warn(`[Checkout] Cannot find room ${item.SKU}:`, roomError);
+          continue;
+        }
+
+        if (roomData.available_rooms < item.quantity) {
+          console.warn(`[Checkout] Not enough rooms for ${item.SKU}: available=${roomData.available_rooms}, requested=${item.quantity}`);
+          continue;
+        }
+
+        // Giảm available_rooms
+        const { error: updateError } = await supabase
+          .from('rooms')
+          .update({ 
+            available_rooms: roomData.available_rooms - item.quantity,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', item.SKU);
+
+        if (updateError) {
+          console.error(`[Checkout] Error updating room ${item.SKU}:`, updateError);
+        } else {
+          console.log(`[Checkout] Updated room ${item.SKU}: ${roomData.available_rooms} -> ${roomData.available_rooms - item.quantity}`);
+        }
+      }
+      
+      // 3. Xóa giỏ hàng tạm sau khi đã lưu thành công
+      clearTempCart();
+      setBookings([]);
+      
+      showNotification("✅ Đặt phòng thành công! Đã lưu " + bookings.length + " phòng vào hệ thống.", "success");
+      
+      // Redirect về trang chủ sau 2 giây
+      setTimeout(() => {
+        router.push("/");
+      }, 2000);
+      
+    } catch (err) {
+      console.error("[Checkout] Error:", err);
+      showNotification("❌ Không thể đặt phòng: " + (err instanceof Error ? err.message : "Lỗi không xác định"), "error");
+    }
   };
 
   const subtotal = bookings.reduce((sum, b) => sum + b.currentPrice * b.quantity, 0);

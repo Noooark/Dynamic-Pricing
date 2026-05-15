@@ -136,8 +136,9 @@ export default function LoginPage() {
           
           const customerWithRequiredFields = {
             ...customerData,
-            id: customerData.user_id,
-            customer_id: customerData.user_id,
+            id: customerData.id,  // customers.id (UUID)
+            customer_id: customerData.id,  // customers.id (UUID) - đúng với cart.customer_id
+            user_id: customerData.user_id,  // auth.users.id
             name: customerData.full_name || customerData.email,
             membership_type: rankName,
           };

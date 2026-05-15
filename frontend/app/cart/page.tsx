@@ -3,32 +3,27 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
-import { fetchCartItems, removeFromCart as removeCartItem, updateCartQuantity as updateCartQty, clearCart as clearCartFn } from "@/app/services/api";
+import { 
+  getTempCart, 
+  saveTempCart, 
+  removeFromTempCart, 
+  updateTempCartQuantity, 
+  clearTempCart,
+  CartItemTemp 
+} from "@/app/lib/cartStorage";
 
-interface CartItem {
+// NOTE: This page uses localStorage for temp cart, NOT Supabase database
+// Only checkout() saves to database
+
+interface CartItem extends CartItemTemp {
   SKU: string;
   product_name: string;
   currentPrice: number;
-  quantity: number;
   displayPrice?: number;
   discountPercent?: number;
   discountText?: string;
   isVIP?: boolean;
   memberLevel?: string;
-  vipInfo?: {
-    roomId?: string;
-    customerName?: string;
-    originalPrice?: number;
-    finalPrice?: number;
-    discountApplied?: string;
-    currency?: string;
-    message?: string;
-  };
-  eventInfo?: {
-    name: string;
-    discount_percent: number;
-    hasEvent: boolean;
-  } | null;
 }
 
 interface CustomerInfo {
@@ -37,26 +32,6 @@ interface CustomerInfo {
   membership_type: string;
   total_orders: number;
   total_spent: number;
-}
-
-interface CustomerData {
-  membership_type: string;
-  name?: string;
-  email?: string;
-}
-
-interface CartItemRaw {
-  room_id: string;
-  sku?: string; // For backward compatibility
-  quantity: number;
-  rooms?: {
-    room_type?: string;
-    current_price?: number;
-  };
-  products?: {
-    product_name?: string;
-    current_price?: number;
-  };
 }
 
 export default function CartPage() {
@@ -70,34 +45,55 @@ export default function CartPage() {
   const [vipCalculating, setVipCalculating] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  // Debug: Log khi component mount
+  console.log('[CartPage] Component rendered', { isAuthenticated, user });
+
   useEffect(() => {
+    console.log('[CartPage] useEffect triggered', { isAuthenticated, user });
     if (!isAuthenticated || !user) {
+      console.log('[CartPage] Not authenticated, redirecting to login');
       router.push("/login");
       return;
     }
+    console.log('[CartPage] Calling fetchCart');
     fetchCart();
     fetchCustomerInfo();
   }, [isAuthenticated, user, router]);
 
-  const fetchCart = async () => {
-    if (!user?.customer_id) return;
-    
+  const fetchCart = () => {
     try {
       setLoading(true);
-      console.log("[CartPage] Fetching cart for customer_id:", user.customer_id);
-      const data = await fetchCartItems(user.customer_id) as CartItemRaw[];
-      console.log("[CartPage] Raw cart data from Supabase:", data);
+      console.log("[CartPage] === START fetchCart ===");
+      console.log("[CartPage] Current localStorage value:", localStorage.getItem('khoi-hotel-temp-cart'));
       
-      // Map Supabase data to CartItem format
-      // Schema mới dùng room_id và rooms thay vì sku và products
-      const mappedCart = data.map((item) => ({
-        SKU: item.room_id || item.sku || 'unknown',
-        product_name: item.rooms?.room_type || item.products?.product_name || item.room_id || item.sku || 'Unknown',
-        currentPrice: item.rooms?.current_price || item.products?.current_price || 0,
+      // Lấy giỏ hàng tạm từ localStorage (không dùng database)
+      const tempCart = getTempCart();
+      console.log("[CartPage] getTempCart returned:", tempCart);
+      console.log("[CartPage] Temp cart length:", tempCart.length);
+      
+      if (tempCart.length === 0) {
+        console.log("[CartPage] Cart is empty!");
+      }
+      
+      // Chuyển đổi định dạng
+      const mappedCart: CartItem[] = tempCart.map((item) => ({
+        SKU: item.room_id,
+        product_name: item.room_type,
+        currentPrice: item.current_price,
+        current_price: item.current_price,
+        room_id: item.room_id,
+        room_type: item.room_type,
         quantity: item.quantity,
+        displayPrice: item.displayPrice,
+        isVIP: item.isVIP,
+        memberLevel: item.memberLevel,
+        discountPercent: item.discountPercent,
+        discountText: item.discountText,
       }));
-      console.log("[CartPage] Mapped cart data:", mappedCart);
+      
+      console.log("[CartPage] Mapped cart:", mappedCart);
       setCart(mappedCart);
+      console.log("[CartPage] === END fetchCart ===");
     } catch (err) {
       console.error("[CartPage] Error fetching cart:", err);
       setError("Không thể tải giỏ hàng: " + (err instanceof Error ? err.message : String(err)));
@@ -106,10 +102,9 @@ export default function CartPage() {
     }
   };
 
-  const fetchCustomerInfo = async () => {
+  const fetchCustomerInfo = () => {
     if (!user?.customer_id) return;
     
-    // Use the user data from AuthContext directly instead of API call
     setCustomerInfo({
       customer_id: user.customer_id,
       name: user.name,
@@ -120,49 +115,72 @@ export default function CartPage() {
   };
 
   const removeFromCart = async (SKU: string) => {
-    if (!user?.customer_id) return;
-
     const item = cart.find(item => item.SKU === SKU);
+    console.log('[removeFromCart] Removing item:', { room_id: SKU });
 
     try {
-      await removeCartItem(user.customer_id, SKU);
+      // Xóa khỏi localStorage
+      const updatedCart = removeFromTempCart(SKU);
       
-      // Cập nhật UI ngay lập tức (optimistic update)
-      setCart(prev => prev.filter(item => item.SKU !== SKU));
+      // Chuyển đổi và cập nhật UI
+      const mappedCart: CartItem[] = updatedCart.map((item) => ({
+        SKU: item.room_id,
+        product_name: item.room_type,
+        currentPrice: item.current_price,
+        current_price: item.current_price,
+        room_id: item.room_id,
+        room_type: item.room_type,
+        quantity: item.quantity,
+        displayPrice: item.displayPrice,
+        isVIP: item.isVIP,
+        memberLevel: item.memberLevel,
+        discountPercent: item.discountPercent,
+        discountText: item.discountText,
+      }));
       
-      // Hiển thị thông báo
+      setCart(mappedCart);
       showNotification(`✅ Đã xóa "${item?.product_name || SKU}" khỏi giỏ hàng`, 'success');
     } catch (err) {
-      console.error("Lỗi xóa khỏi giỏ:", err);
+      console.error("[removeFromCart] Error:", err);
       showNotification("❌ Không thể xóa sản phẩm khỏi giỏ", 'error');
-      // Reload lại giỏ hàng nếu có lỗi
-      fetchCart();
     }
   };
 
   const updateQuantity = async (SKU: string, quantity: number) => {
-    if (!user?.customer_id) return;
-    
     const item = cart.find(item => item.SKU === SKU);
     if (!item) return;
+
+    console.log('[updateQuantity] Updating:', { room_id: SKU, quantity });
 
     if (quantity <= 0) {
       await removeFromCart(SKU);
       return;
     }
 
-    // Optimistic update - cập nhật ngay lập tức
-    setCart(prev => prev.map(item => 
-      item.SKU === SKU ? { ...item, quantity } : item
-    ));
-
     try {
-      await updateCartQty(user.customer_id, SKU, quantity);
+      // Cập nhật trong localStorage
+      const updatedCart = updateTempCartQuantity(SKU, quantity);
+      
+      // Chuyển đổi và cập nhật UI
+      const mappedCart: CartItem[] = updatedCart.map((item) => ({
+        SKU: item.room_id,
+        product_name: item.room_type,
+        currentPrice: item.current_price,
+        current_price: item.current_price,
+        room_id: item.room_id,
+        room_type: item.room_type,
+        quantity: item.quantity,
+        displayPrice: item.displayPrice,
+        isVIP: item.isVIP,
+        memberLevel: item.memberLevel,
+        discountPercent: item.discountPercent,
+        discountText: item.discountText,
+      }));
+      
+      setCart(mappedCart);
     } catch (err) {
-      console.error("Lỗi cập nhật số lượng:", err);
+      console.error("[updateQuantity] Error:", err);
       showNotification("❌ Không thể cập nhật số lượng", 'error');
-      // Quay lại số lượng cũ nếu có lỗi
-      fetchCart();
     }
   };
 
@@ -173,31 +191,28 @@ export default function CartPage() {
     }, 3000);
   };
 
-  const calculateVIPPrices = async () => {
-    if (!user?.customer_id || cart.length === 0) {
-      showNotification("⚠️ Vui lòng đăng nhập và chọn phòng trước khi tính giá VIP", "error");
+  const calculateVIPPrices = () => {
+    if (cart.length === 0) {
+      showNotification("⚠️ Vui lòng chọn phòng trước khi tính giá VIP", "error");
       return;
     }
 
     try {
       setVipCalculating(true);
       
-      // Tính giá VIP trực tiếp từ frontend dựa trên membership type
-      // Dùng membership_type từ user context (đã có sẵn)
-      const membershipType = user.membership_type || 'Standard';
+      const membershipType = user?.membership_type || 'Standard';
       
-      // Xác định discount dựa trên membership type
       const membershipDiscounts: Record<string, number> = {
-        'Platinum': 0.15,  // 15% discount
-        'Gold': 0.10,      // 10% discount
-        'Silver': 0.05,    // 5% discount
-        'Standard': 0.02,  // 2% discount
+        'Platinum': 0.15,
+        'Gold': 0.10,
+        'Silver': 0.05,
+        'Standard': 0.02,
       };
       
       const discountRate = membershipDiscounts[membershipType] || 0;
       
-      // Cập nhật giá VIP cho từng phòng trong cart
-      const updatedCart = cart.map((item: CartItem) => {
+      // Cập nhật giá VIP
+      const updatedCart = cart.map((item) => {
         const vipPrice = item.currentPrice * (1 - discountRate);
         return {
           ...item,
@@ -208,6 +223,20 @@ export default function CartPage() {
           discountText: `${Math.round(discountRate * 100)}%`,
         };
       });
+      
+      // Lưu vào localStorage
+      const tempCart: CartItemTemp[] = updatedCart.map(item => ({
+        room_id: item.room_id,
+        room_type: item.room_type,
+        current_price: item.current_price,
+        quantity: item.quantity,
+        displayPrice: item.displayPrice,
+        isVIP: item.isVIP,
+        memberLevel: item.memberLevel,
+        discountPercent: item.discountPercent,
+        discountText: item.discountText,
+      }));
+      saveTempCart(tempCart);
       
       setCart(updatedCart);
       showNotification(`✅ Đã áp dụng giá VIP cho hạng ${membershipType}!`, "success");
@@ -220,19 +249,71 @@ export default function CartPage() {
   };
 
   const checkout = async () => {
-    // Note: Checkout requires backend processing
-    showNotification("⚠️ Tính năng đặt phòng yêu cầu backend. Vui lòng liên hệ admin.", "error");
-  };
+    if (cart.length === 0) {
+      showNotification("⚠️ Giỏ hàng đang trống", "error");
+      return;
+    }
 
-  const clearMyCart = async () => {
-    if (!user?.customer_id) return;
+    if (!user?.customer_id) {
+      showNotification("⚠️ Vui lòng đăng nhập để đặt phòng", "error");
+      return;
+    }
 
     try {
-      await clearCartFn(user.customer_id);
+      showNotification("⏳ Đang xử lý đặt phòng...", "success");
+      
+      // Import supabase để lưu vào database
+      const { supabase } = await import('@/lib/supabase');
+      
+      // Chuyển đổi cart items sang định dạng database
+      const cartItemsToInsert = cart.map(item => ({
+        customer_id: user.customer_id,
+        room_id: item.room_id,
+        quantity: item.quantity,
+      }));
+      
+      console.log("[Checkout] Saving to database:", cartItemsToInsert);
+      
+      // Lưu vào bảng cart
+      const { data, error } = await supabase
+        .from('cart')
+        .upsert(cartItemsToInsert, {
+          onConflict: 'customer_id,room_id' // Update if exists
+        })
+        .select();
+
+      if (error) {
+        console.error("[Checkout] Database error:", error);
+        throw new Error("Không thể lưu đặt phòng: " + error.message);
+      }
+
+      console.log("[Checkout] Saved to database:", data);
+      
+      // Xóa giỏ hàng tạm sau khi đã lưu thành công
+      clearTempCart();
       setCart([]);
+      
+      showNotification("✅ Đặt phòng thành công! Đã lưu " + cart.length + " phòng vào hệ thống.", "success");
+      
+      // Redirect về trang chủ sau 2 giây
+      setTimeout(() => {
+        router.push("/");
+      }, 2000);
+      
+    } catch (err) {
+      console.error("[Checkout] Error:", err);
+      showNotification("❌ Không thể đặt phòng: " + (err instanceof Error ? err.message : "Lỗi không xác định"), "error");
+    }
+  };
+
+  const clearMyCart = () => {
+    try {
+      clearTempCart();
+      setCart([]);
+      showNotification("✅ Đã xóa toàn bộ giỏ hàng", "success");
     } catch (err) {
       console.error("Lỗi xóa giỏ hàng:", err);
-      setError("Không thể xóa giỏ hàng");
+      showNotification("❌ Không thể xóa giỏ hàng", "error");
     }
   };
 
@@ -283,7 +364,6 @@ export default function CartPage() {
         </div>
       )}
 
-      {/* Notification Toast */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg animate-fade-in-down ${
           notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
@@ -298,7 +378,6 @@ export default function CartPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Cart Items */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow">
             <div className="p-6 border-b border-gray-200">
@@ -343,7 +422,6 @@ export default function CartPage() {
                         <h3 className="font-semibold text-gray-900">{item.product_name}</h3>
                         <p className="text-sm text-gray-600">Mã phòng: {item.SKU}</p>
                         
-                        {/* Price Display */}
                         <div className="mt-2 flex flex-col gap-2">
                           <div className="flex items-center space-x-4">
                             <div>
@@ -368,19 +446,9 @@ export default function CartPage() {
                               </span>
                             )}
                           </div>
-                          {item.vipInfo?.message && (
-                            <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
-                              {item.vipInfo.message}
-                              {item.vipInfo.customerName && (
-                                <span className="font-semibold"> • {item.vipInfo.customerName}</span>
-                              )}
-                            </p>
-                          )}
-                          
                         </div>
                       </div>
 
-                      {/* Quantity Controls */}
                       <div className="flex items-center space-x-3">
                         <button
                           onClick={() => {
@@ -413,7 +481,6 @@ export default function CartPage() {
                         </button>
                       </div>
 
-                      {/* Remove Button */}
                       <button
                         onClick={() => removeFromCart(item.SKU)}
                         disabled={updating}
@@ -432,7 +499,6 @@ export default function CartPage() {
           </div>
         </div>
 
-        {/* Order Summary */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow p-6 sticky top-4">
             <h3 className="text-lg font-semibold mb-4">Tổng đặt phòng</h3>
@@ -481,7 +547,7 @@ export default function CartPage() {
             {cart.length > 0 && (
               <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  💡 Nhấn Tính giá VIP để Flow 3 n8n áp dụng ưu đãi hạng thành viên cho từng phòng!
+                  💡 Giỏ hàng tạm - Chỉ lưu vào hệ thống khi xác nhận đặt phòng
                 </p>
               </div>
             )}
