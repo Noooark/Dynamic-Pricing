@@ -153,12 +153,39 @@ export default function AdminDashboard() {
     setFlow2Result(null);
 
     try {
+      console.log("[Flow2] Starting Flow 2...");
       const { triggerFlow2 } = await import("@/app/services/api");
       const response = await triggerFlow2();
-      setFlow2Result(response);
+      console.log("[Flow2] Response received:", response);
+      console.log("[Flow2] Response type:", typeof response);
+      console.log("[Flow2] Is array?", Array.isArray(response));
+      
+      // Parse response to ensure correct format
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let flow2Response: any = {};
+      
+      // If response is an array, it means rooms were compared
+      if (Array.isArray(response)) {
+        flow2Response = {
+          message: `Đã quét và so sánh ${response.length} phòng`,
+          n8nResponse: response
+        };
+      } else if (typeof response === 'string') {
+        try {
+          flow2Response = JSON.parse(response);
+        } catch {
+          flow2Response = { message: response };
+        }
+      } else if (typeof response === 'object' && response !== null) {
+        flow2Response = response;
+      }
+      
+      console.log("[Flow2] Processed response:", flow2Response);
+      setFlow2Result(flow2Response);
       loadRooms();
       loadHistory();
     } catch (err) {
+      console.error("[Flow2] Error:", err);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const error = err as any;
       setFlow2Result({ error: error.message || "Lỗi khi chạy FLOW 2" });
@@ -406,69 +433,136 @@ export default function AdminDashboard() {
                     </div>
                   )}
 
-                  {/* Comparison Table */}
-                  {flow2Result.comparison && flow2Result.comparison.length > 0 && (
-                    <div className="mt-6">
-                      <h3 className="font-bold text-lg mb-3">Báo cáo so sánh giá</h3>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full bg-white rounded-lg overflow-hidden">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại phòng</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá của mình</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá đối thủ thấp nhất</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Đối thủ</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số phòng khớp</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {flow2Result.comparison.map((item, index) => {
-                              const khoiPrice = item.khoi_price || 0;
-                              const competitorPrice = item.competitor_min_price || 0;
-                              const isExpensive = item.status?.includes('Đắt') || khoiPrice > competitorPrice * 1.22;
-                              const statusColor = isExpensive ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
-                              const statusIcon = isExpensive ? '🔴' : '🟢';
-                              const priceDiff = khoiPrice - competitorPrice;
-                              const priceDiffPercent = competitorPrice ? ((priceDiff / competitorPrice) * 100).toFixed(1) : '0';
-                              
-                              return (
-                                <tr key={index} className="hover:bg-gray-50">
-                                  <td className="px-4 py-3 text-sm font-medium">{item.room_type}</td>
-                                  <td className="px-4 py-3 text-sm font-semibold">
-                                    {item.khoi_price?.toLocaleString('vi-VN')} ₫
-                                  </td>
-                                  <td className="px-4 py-3 text-sm font-bold text-blue-600">
-                                    {item.competitor_min_price?.toLocaleString('vi-VN')} ₫
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-gray-600">
-                                    {item.competitor_name || '—'}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-center">
-                                    <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">
-                                      {item.matching_rooms_count || 0} phòng
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-sm">
-                                    <div className="flex flex-col gap-1">
-                                      <span className={`px-2 py-1 rounded ${statusColor} font-semibold`}>
-                                        {statusIcon} {item.status || (isExpensive ? 'Đắt' : 'Tốt')}
-                                      </span>
-                                      {priceDiff > 0 && (
-                                        <span className="text-xs text-red-600">
-                                          Cao hơn {priceDiff.toLocaleString('vi-VN')}₫ ({priceDiffPercent}%)
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
+                  {/* Comparison Table - Support both old and new format */}
+                  {(() => {
+                    // Handle new format: array of {my_room, khoi_price, competitor_name, competitor_price, status}
+                    const n8nResponse = flow2Result.n8nResponse;
+                    if (Array.isArray(n8nResponse) && n8nResponse.length > 0 && n8nResponse[0]?.my_room) {
+                      return (
+                        <div className="mt-6">
+                          <h3 className="font-bold text-lg mb-3">Báo cáo so sánh giá</h3>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full bg-white rounded-lg overflow-hidden">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại phòng</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá của mình</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Đối thủ</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá đối thủ</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
                                 </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {n8nResponse.map((item: {
+                                  my_room?: string;
+                                  khoi_price?: number;
+                                  competitor_name?: string;
+                                  competitor_price?: number;
+                                  status?: string;
+                                }, index: number) => {
+                                  const isExpensive = item.status?.includes('🔴');
+                                  const statusColor = isExpensive ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
+                                  const priceDiff = (item.khoi_price || 0) - (item.competitor_price || 0);
+                                  
+                                  return (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3 text-sm font-medium">{item.my_room}</td>
+                                      <td className="px-4 py-3 text-sm font-semibold">
+                                        {item.khoi_price?.toLocaleString('vi-VN')} ₫
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-gray-600">
+                                        {item.competitor_name || '—'}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm font-bold text-blue-600">
+                                        {item.competitor_price?.toLocaleString('vi-VN')} ₫
+                                      </td>
+                                      <td className="px-4 py-3 text-sm">
+                                        <span className={`px-2 py-1 rounded ${statusColor} font-semibold`}>
+                                          {item.status || '—'}
+                                        </span>
+                                        {priceDiff > 0 && (
+                                          <span className="text-xs text-red-600 ml-2">
+                                            Cao hơn {priceDiff.toLocaleString('vi-VN')}₫
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Handle old format
+                    if (flow2Result.comparison && flow2Result.comparison.length > 0) {
+                      return (
+                        <div className="mt-6">
+                          <h3 className="font-bold text-lg mb-3">Báo cáo so sánh giá</h3>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full bg-white rounded-lg overflow-hidden">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại phòng</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá của mình</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá đối thủ thấp nhất</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Đối thủ</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số phòng khớp</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {flow2Result.comparison.map((item, index) => {
+                                  const khoiPrice = item.khoi_price || 0;
+                                  const competitorPrice = item.competitor_min_price || 0;
+                                  const isExpensive = item.status?.includes('Đắt') || khoiPrice > competitorPrice * 1.22;
+                                  const statusColor = isExpensive ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
+                                  const statusIcon = isExpensive ? '🔴' : '🟢';
+                                  const priceDiff = khoiPrice - competitorPrice;
+                                  const priceDiffPercent = competitorPrice ? ((priceDiff / competitorPrice) * 100).toFixed(1) : '0';
+                                  
+                                  return (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3 text-sm font-medium">{item.room_type}</td>
+                                      <td className="px-4 py-3 text-sm font-semibold">
+                                        {item.khoi_price?.toLocaleString('vi-VN')} ₫
+                                      </td>
+                                      <td className="px-4 py-3 text-sm font-bold text-blue-600">
+                                        {item.competitor_min_price?.toLocaleString('vi-VN')} ₫
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-gray-600">
+                                        {item.competitor_name || '—'}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-center">
+                                        <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">
+                                          {item.matching_rooms_count || 0} phòng
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-sm">
+                                        <div className="flex flex-col gap-1">
+                                          <span className={`px-2 py-1 rounded ${statusColor} font-semibold`}>
+                                            {statusIcon} {item.status || (isExpensive ? 'Đắt' : 'Tốt')}
+                                          </span>
+                                          {priceDiff > 0 && (
+                                            <span className="text-xs text-red-600">
+                                              Cao hơn {priceDiff.toLocaleString('vi-VN')}₫ ({priceDiffPercent}%)
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   {/* Raw Response (collapsible) */}
                   {flow2Result.n8nResponse !== undefined && flow2Result.n8nResponse !== null && (
