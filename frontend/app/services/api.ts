@@ -1,12 +1,6 @@
 import axios from 'axios';
 import { supabase, N8N_FLOW1_URL, N8N_FLOW2_URL, N8N_FLOW3_URL, N8N_FLOW4_URL } from '@/lib/supabase';
 
-// API client for n8n webhooks (optional, for admin actions)
-const API = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000',
-  timeout: 10000,
-});
-
 // ==========================================
 // Supabase Data Fetching Functions
 // ==========================================
@@ -142,45 +136,8 @@ export const fetchCustomerInfo = async (customer_id: string) => {
   }
 };
 
-/**
- * Fetch cart items from Supabase
- * Lưu ý: customer_id here is actually user_id, we need to find actual customer.id first
- */
-export const fetchCartItems = async (user_id: string) => {
-  try {
-    // First find customer.id from user_id
-    const { data: customer, error: customerError } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('user_id', user_id)
-      .single();
-
-    if (customerError || !customer) {
-      console.error('Error finding customer for cart:', customerError);
-      return [];
-    }
-
-    const customer_id = customer.id;
-
-    const { data, error } = await supabase
-      .from('cart')
-      .select(`
-        *,
-        rooms (
-          id,
-          room_type,
-          current_price
-        )
-      `)
-      .eq('customer_id', customer_id);
-
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error fetching cart items:', error);
-    return [];
-  }
-};
+// NOTE: fetchCartItems has been removed. Use getTempCart from @/app/lib/cartStorage instead.
+// The cart now uses localStorage for temporary storage, only saving to database on checkout.
 
 /**
  * Add item to cart in Supabase
@@ -247,33 +204,45 @@ export const addToCart = async (user_id: string, room_id: string, quantity: numb
 /**
  * Update cart item quantity
  * Lưu ý: Schema hiện tại dùng room_id thay vì sku
+ * Đã thêm logging chi tiết để debug
  */
 export const updateCartQuantity = async (customer_id: string, room_id: string, quantity: number) => {
+  console.log('[updateCartQuantity] Called with:', { customer_id, room_id, quantity });
+  
   try {
     if (quantity <= 0) {
-      // Remove item
-      const { error } = await supabase
+      console.log('[updateCartQuantity] Removing item from cart...');
+      const { data, error } = await supabase
         .from('cart')
         .delete()
         .eq('customer_id', customer_id)
-        .eq('room_id', room_id);
+        .eq('room_id', room_id)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[updateCartQuantity] Delete error:', error);
+        throw error;
+      }
+      console.log('[updateCartQuantity] Delete successful:', data);
       return null;
     } else {
+      console.log('[updateCartQuantity] Updating quantity...');
       const { data, error } = await supabase
         .from('cart')
         .update({ quantity })
         .eq('customer_id', customer_id)
         .eq('room_id', room_id)
-        .select()
-        .single();
+        .select();
 
-      if (error) throw error;
-      return data;
+      if (error) {
+        console.error('[updateCartQuantity] Update error:', error);
+        throw error;
+      }
+      console.log('[updateCartQuantity] Update successful:', data);
+      return data?.[0] || null;
     }
   } catch (error) {
-    console.error('Error updating cart:', error);
+    console.error('[updateCartQuantity] Error:', error);
     throw error;
   }
 };
@@ -281,37 +250,55 @@ export const updateCartQuantity = async (customer_id: string, room_id: string, q
 /**
  * Remove item from cart
  * Lưu ý: Schema hiện tại dùng room_id thay vì sku
+ * Đã thêm logging chi tiết
  */
 export const removeFromCart = async (customer_id: string, room_id: string) => {
+  console.log('[removeFromCart] Called with:', { customer_id, room_id });
+  
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('cart')
       .delete()
       .eq('customer_id', customer_id)
-      .eq('room_id', room_id);
+      .eq('room_id', room_id)
+      .select();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[removeFromCart] Delete error:', error);
+      throw error;
+    }
+    
+    console.log('[removeFromCart] Delete successful:', data);
     return true;
   } catch (error) {
-    console.error('Error removing from cart:', error);
+    console.error('[removeFromCart] Error:', error);
     throw error;
   }
 };
 
 /**
  * Clear cart for customer
+ * Đã thêm logging chi tiết
  */
 export const clearCart = async (customer_id: string) => {
+  console.log('[clearCart] Called with customer_id:', customer_id);
+  
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('cart')
       .delete()
-      .eq('customer_id', customer_id);
+      .eq('customer_id', customer_id)
+      .select();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[clearCart] Delete error:', error);
+      throw error;
+    }
+    
+    console.log('[clearCart] Delete successful, removed', data?.length || 0, 'items');
     return true;
   } catch (error) {
-    console.error('Error clearing cart:', error);
+    console.error('[clearCart] Error:', error);
     throw error;
   }
 };
@@ -339,17 +326,76 @@ export const triggerFlow1 = async () => {
 
 /**
  * Trigger Flow 2 via n8n webhook
+ * Added comprehensive logging for debugging
  */
 export const triggerFlow2 = async () => {
+  console.log('🚀 [Flow 2] === START TRIGGERING FLOW 2 ===');
+  console.log('[Flow 2] Timestamp:', new Date().toISOString());
+  console.log('[Flow 2] n8n Webhook URL:', N8N_FLOW2_URL);
+  
+  const startTime = Date.now();
+  
   try {
+    console.log('[Flow 2] Sending POST request to n8n webhook...');
+    
     const response = await axios.post(N8N_FLOW2_URL, {
       action: 'run_flow2',
-      timestamp: new Date().toISOString()
-    }, { timeout: 90000 });
-
+      timestamp: new Date().toISOString(),
+      source: 'admin_dashboard'
+    }, { 
+      timeout: 90000,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const duration = Date.now() - startTime;
+    console.log('[Flow 2] ✅ Response received after', duration, 'ms');
+    console.log('[Flow 2] Response status:', response.status);
+    console.log('[Flow 2] Response data:', JSON.stringify(response.data, null, 2));
+    
+    // Log detailed flow execution info
+    if (response.data) {
+      console.log('[Flow 2] 📊 Flow 2 Execution Summary:');
+      if (response.data.summary) {
+        console.log('[Flow 2] Total rooms analyzed:', response.data.summary.totalRooms);
+        console.log('[Flow 2] Rooms kept:', response.data.summary.keepCount);
+        console.log('[Flow 2] Rooms reduced:', response.data.summary.reduceCount);
+        console.log('[Flow 2] Rooms increased:', response.data.summary.increaseCount);
+      }
+      if (response.data.comparison) {
+        console.log('[Flow 2] 📈 Price comparison results:', response.data.comparison.length, 'rooms');
+        response.data.comparison.forEach((item: any, index: number) => {
+          console.log(`[Flow 2] Room ${index + 1}:`, {
+            type: item.room_type,
+            ourPrice: item.khoi_price,
+            competitorPrice: item.competitor_min_price,
+            status: item.status,
+            decision: item.status?.includes('Đắt') ? 'GIẢM' : 'GIỮ'
+          });
+        });
+      }
+    }
+    
+    console.log('[Flow 2] === END TRIGGERING FLOW 2 ===\n');
     return response.data;
+    
   } catch (error) {
-    console.error('Error triggering Flow 2:', error);
+    const duration = Date.now() - startTime;
+    console.error('[Flow 2] ❌ ERROR after', duration, 'ms');
+    console.error('[Flow 2] Error type:', error instanceof Error ? error.name : 'Unknown');
+    console.error('[Flow 2] Error message:', error instanceof Error ? error.message : error);
+    
+    if (axios.isAxiosError(error)) {
+      console.error('[Flow 2] Axios error details:');
+      console.error('[Flow 2] Status:', error.response?.status);
+      console.error('[Flow 2] Status text:', error.response?.statusText);
+      console.error('[Flow 2] Data:', error.response?.data);
+      console.error('[Flow 2] Code:', error.code);
+      console.error('[Flow 2] Request:', error.request);
+    }
+    
+    console.log('[Flow 2] === END TRIGGERING FLOW 2 (WITH ERROR) ===\n');
     throw error;
   }
 };
@@ -458,24 +504,75 @@ export const calculateVIPPriceForRoom = async (
 /**
  * Check event discount for a product/room
  * Kiểm tra xem có sự kiện nào đang diễn ra không
+ * Đã refactor để dùng n8n webhook thay vì backend
  */
 export const checkEventDiscount = async (date?: string, SKU?: string) => {
+  console.log('📅 [Event Check] Checking event discount for date:', date || new Date().toISOString().split('T')[0], 'SKU:', SKU);
+  
   try {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    // Dùng n8n Flow 4 webhook để kiểm tra event
     const response = await axios.post(
-      `${API_URL}/event/check`,
+      N8N_FLOW4_URL,
       {
         date: date || new Date().toISOString().split('T')[0],
         SKU
       },
-      { timeout: 10000 }
+      { timeout: 15000 }
     );
 
+    console.log('📅 [Event Check] Response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Error checking event discount:', error);
-    return null;
+    console.error('❌ [Event Check] Error checking event discount:', error);
+    
+    // Fallback: Query trực tiếp từ Supabase
+    try {
+      console.log('[Event Check] Falling back to Supabase direct query...');
+      const currentDate = date || new Date().toISOString().split('T')[0];
+      
+      const { data: events, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('is_active', true)
+        .lte('start_date', currentDate)
+        .gte('end_date', currentDate);
+
+      if (error) throw error;
+      
+      const activeEvents = events || [];
+      const bestEvent = activeEvents.length > 0 
+        ? activeEvents.reduce((best, event) => 
+            (event.discount_percent || 0) > (best.discount_percent || 0) ? event : best
+          )
+        : null;
+
+      console.log('[Event Check] Supabase fallback result:', { 
+        hasEvent: !!bestEvent, 
+        discount: bestEvent?.discount_percent || 0 
+      });
+
+      return {
+        hasEvent: !!bestEvent,
+        eventDiscount: !!bestEvent,
+        discount_percent: bestEvent?.discount_percent || 0,
+        isVIP: !!bestEvent,
+        member_level: bestEvent ? 'event' : 'none',
+        eventInfo: bestEvent ? {
+          name: bestEvent.name,
+          discount_percent: bestEvent.discount_percent,
+          start_date: bestEvent.start_date,
+          end_date: bestEvent.end_date
+        } : null,
+        currentDate,
+        activeEvents: activeEvents.length,
+        bestDiscount: bestEvent?.discount_percent || 0,
+        source: 'supabase_fallback'
+      };
+    } catch (fallbackError) {
+      console.error('[Event Check] Fallback also failed:', fallbackError);
+      return null;
+    }
   }
 };
 
-export default API;
+export default supabase;

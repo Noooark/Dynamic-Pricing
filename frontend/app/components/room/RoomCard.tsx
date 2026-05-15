@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
-import { addToCart } from "@/app/services/api";
+import { addToTempCart } from "@/app/lib/cartStorage";
 
 interface Room {
   id: string;
@@ -70,11 +70,25 @@ export default function RoomCard({ rooms }: RoomCardProps) {
 
     try {
       setBookingId(roomId);
-      await addToCart(user.customer_id, roomId, 1);
-      setBookedIds((prev) => new Set([...prev, roomId]));
-
+      
       const room = rooms.find((r) => r.id === roomId);
-      setNotificationMessage(`✅ Đã thêm "${room?.room_type || "Phòng"}" vào danh sách đặt phòng!`);
+      if (!room) {
+        alert("Không tìm thấy phòng");
+        setBookingId(null);
+        return;
+      }
+
+      // Lưu vào localStorage thay vì database
+      addToTempCart({
+        room_id: roomId,
+        room_type: room.room_type,
+        current_price: room.current_price,
+        displayPrice: room.displayPrice,
+        isVIP: room.isVIP,
+      });
+
+      setBookedIds((prev) => new Set([...prev, roomId]));
+      setNotificationMessage(`✅ Đã thêm "${room.room_type}" vào giỏ hàng tạm!`);
       setShowNotification(true);
 
       setTimeout(() => setShowNotification(false), 3000);

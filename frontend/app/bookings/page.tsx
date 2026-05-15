@@ -3,7 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
-import { fetchCartItems, removeFromCart as removeCartItem, updateCartQuantity as updateCartQty, clearCart as clearCartFn, calculateVIPPriceForRoom } from "@/app/services/api";
+import { calculateVIPPriceForRoom } from "@/app/services/api";
+import { 
+  getTempCart, 
+  removeFromTempCart, 
+  updateTempCartQuantity, 
+  clearTempCart,
+  CartItemTemp 
+} from "@/app/lib/cartStorage";
 
 interface BookingItem {
   SKU: string;
@@ -70,21 +77,31 @@ export default function BookingsPage() {
     fetchCustomerInfo();
   }, [isAuthenticated, user, router]);
 
-  const fetchBookings = async () => {
-    if (!user?.customer_id) return;
+  const fetchBookings = () => {
     try {
       setLoading(true);
-      const data = await fetchCartItems(user.customer_id) as CartItemRaw[];
-      // Map Supabase data to BookingItem format
-      const mappedBookings = data.map((item) => ({
+      console.log("[BookingsPage] Fetching temp cart from localStorage");
+      
+      // Lấy giỏ hàng tạm từ localStorage (không dùng database)
+      const tempCart = getTempCart();
+      console.log("[BookingsPage] Temp cart:", tempCart);
+      
+      // Map to BookingItem format
+      const mappedBookings: BookingItem[] = tempCart.map((item) => ({
         SKU: item.room_id,
-        product_name: item.rooms?.room_type || item.room_id || 'Unknown',
-        currentPrice: item.rooms?.current_price || 0,
+        product_name: item.room_type,
+        currentPrice: item.current_price,
         quantity: item.quantity,
+        displayPrice: item.displayPrice,
+        isVIP: item.isVIP,
+        memberLevel: item.memberLevel,
+        discountPercent: item.discountPercent,
       }));
+      
+      console.log("[BookingsPage] Mapped bookings:", mappedBookings);
       setBookings(mappedBookings);
     } catch (err) {
-      console.error("Lỗi lấy danh sách đặt phòng:", err);
+      console.error("[BookingsPage] Error fetching bookings:", err);
       setError("Không thể tải danh sách đặt phòng: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading(false);
@@ -107,11 +124,12 @@ export default function BookingsPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const removeBooking = async (SKU: string) => {
-    if (!user?.customer_id) return;
+  const removeBooking = (SKU: string) => {
     const item = bookings.find((b) => b.SKU === SKU);
     try {
-      await removeCartItem(user.customer_id, SKU);
+      // Xóa khỏi localStorage
+      removeFromTempCart(SKU);
+      // Cập nhật UI
       setBookings((prev) => prev.filter((b) => b.SKU !== SKU));
       showNotification(`✅ Đã xóa "${item?.product_name || "phòng"}" khỏi danh sách`, "success");
     } catch (err) {
@@ -121,17 +139,18 @@ export default function BookingsPage() {
     }
   };
 
-  const updateNights = async (SKU: string, quantity: number) => {
-    if (!user?.customer_id) return;
+  const updateNights = (SKU: string, quantity: number) => {
     if (quantity <= 0) {
-      await removeBooking(SKU);
+      removeBooking(SKU);
       return;
     }
-    setBookings((prev) =>
-      prev.map((b) => (b.SKU === SKU ? { ...b, quantity } : b))
-    );
     try {
-      await updateCartQty(user.customer_id, SKU, quantity);
+      // Cập nhật trong localStorage
+      updateTempCartQuantity(SKU, quantity);
+      // Cập nhật UI
+      setBookings((prev) =>
+        prev.map((b) => (b.SKU === SKU ? { ...b, quantity } : b))
+      );
     } catch (err) {
       console.error("Lỗi cập nhật số đêm:", err);
       showNotification("❌ Không thể cập nhật số đêm", "error");
@@ -247,10 +266,11 @@ export default function BookingsPage() {
     }
   };
 
-  const clearBookings = async () => {
-    if (!user?.customer_id) return;
+  const clearBookings = () => {
     try {
-      await clearCartFn(user.customer_id);
+      // Xóa localStorage
+      clearTempCart();
+      // Cập nhật UI
       setBookings([]);
       showNotification("✅ Đã xóa toàn bộ đặt phòng", "success");
     } catch (err) {
@@ -260,8 +280,61 @@ export default function BookingsPage() {
   };
 
   const checkout = async () => {
-    // Note: Checkout requires backend processing
-    showNotification("⚠️ Tính năng đặt phòng yêu cầu backend. Vui lòng liên hệ admin.", "error");
+    if (bookings.length === 0) {
+      showNotification("⚠️ Giỏ đặt phòng đang trống", "error");
+      return;
+    }
+
+    if (!user?.customer_id) {
+      showNotification("⚠️ Vui lòng đăng nhập để đặt phòng", "error");
+      return;
+    }
+
+    try {
+      showNotification("⏳ Đang xử lý đặt phòng...", "success");
+      
+      // Import supabase để lưu vào database
+      const { supabase } = await import('@/lib/supabase');
+      
+      // Chuyển đổi bookings sang định dạng database
+      const cartItemsToInsert = bookings.map(item => ({
+        customer_id: user.customer_id,
+        room_id: item.SKU,
+        quantity: item.quantity,
+      }));
+      
+      console.log("[Checkout] Saving to database:", cartItemsToInsert);
+      
+      // Lưu vào bảng cart
+      const { data, error } = await supabase
+        .from('cart')
+        .upsert(cartItemsToInsert, {
+          onConflict: 'customer_id,room_id' // Update if exists
+        })
+        .select();
+
+      if (error) {
+        console.error("[Checkout] Database error:", error);
+        throw new Error("Không thể lưu đặt phòng: " + error.message);
+      }
+
+      console.log("[Checkout] Saved to database:", data);
+      
+      // Xóa giỏ hàng tạm sau khi đã lưu thành công
+      clearTempCart();
+      setBookings([]);
+      
+      showNotification("✅ Đặt phòng thành công! Đã lưu " + bookings.length + " phòng vào hệ thống.", "success");
+      
+      // Redirect về trang chủ sau 2 giây
+      setTimeout(() => {
+        router.push("/");
+      }, 2000);
+      
+    } catch (err) {
+      console.error("[Checkout] Error:", err);
+      showNotification("❌ Không thể đặt phòng: " + (err instanceof Error ? err.message : "Lỗi không xác định"), "error");
+    }
   };
 
   const subtotal = bookings.reduce((sum, b) => sum + b.currentPrice * b.quantity, 0);
