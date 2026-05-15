@@ -296,31 +296,68 @@ export default function BookingsPage() {
       // Import supabase để lưu vào database
       const { supabase } = await import('@/lib/supabase');
       
-      // Chuyển đổi bookings sang định dạng database
+      // 1. Lưu vào bảng cart
       const cartItemsToInsert = bookings.map(item => ({
         customer_id: user.customer_id,
         room_id: item.SKU,
         quantity: item.quantity,
       }));
       
-      console.log("[Checkout] Saving to database:", cartItemsToInsert);
+      console.log("[Checkout] Step 1 - Saving to cart:", cartItemsToInsert);
       
-      // Lưu vào bảng cart
-      const { data, error } = await supabase
+      const { data: cartData, error: cartError } = await supabase
         .from('cart')
         .upsert(cartItemsToInsert, {
-          onConflict: 'customer_id,room_id' // Update if exists
+          onConflict: 'customer_id,room_id'
         })
         .select();
 
-      if (error) {
-        console.error("[Checkout] Database error:", error);
-        throw new Error("Không thể lưu đặt phòng: " + error.message);
+      if (cartError) {
+        console.error("[Checkout] Cart error:", cartError);
+        throw new Error("Không thể lưu đặt phòng: " + cartError.message);
       }
 
-      console.log("[Checkout] Saved to database:", data);
+      console.log("[Checkout] Saved to cart:", cartData);
       
-      // Xóa giỏ hàng tạm sau khi đã lưu thành công
+      // 2. Giảm số phòng còn trống trong bảng rooms
+      console.log("[Checkout] Step 2 - Updating room availability...");
+      
+      // Cập nhật available_rooms cho từng phòng
+      for (const item of bookings) {
+        // Kiểm tra xem còn đủ phòng không
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .select('available_rooms')
+          .eq('id', item.SKU)
+          .single();
+
+        if (roomError) {
+          console.warn(`[Checkout] Cannot find room ${item.SKU}:`, roomError);
+          continue;
+        }
+
+        if (roomData.available_rooms < item.quantity) {
+          console.warn(`[Checkout] Not enough rooms for ${item.SKU}: available=${roomData.available_rooms}, requested=${item.quantity}`);
+          continue;
+        }
+
+        // Giảm available_rooms
+        const { error: updateError } = await supabase
+          .from('rooms')
+          .update({ 
+            available_rooms: roomData.available_rooms - item.quantity,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', item.SKU);
+
+        if (updateError) {
+          console.error(`[Checkout] Error updating room ${item.SKU}:`, updateError);
+        } else {
+          console.log(`[Checkout] Updated room ${item.SKU}: ${roomData.available_rooms} -> ${roomData.available_rooms - item.quantity}`);
+        }
+      }
+      
+      // 3. Xóa giỏ hàng tạm sau khi đã lưu thành công
       clearTempCart();
       setBookings([]);
       
