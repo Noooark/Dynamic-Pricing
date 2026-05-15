@@ -25,8 +25,8 @@ interface PriceHistory {
   new_price: number;
   reason: string;
   created_at: string;
-}
 
+}
 export default function AdminDashboard() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [history, setHistory] = useState<PriceHistory[]>([]);
@@ -71,12 +71,24 @@ export default function AdminDashboard() {
     comparison?: ComparisonItem[];
     n8nResponse?: unknown;
   } | null>(null);
+  interface EventInfo {
+    event_name?: string;
+    name?: string;
+    increase_percent?: number;
+    discount_percent?: number;
+    start_date?: string;
+    end_date?: string;
+  }
+
   const [flow4Result, setFlow4Result] = useState<{
     message?: string;
     totalProducts?: number;
     updatedCount?: number;
     unchangedCount?: number;
     error?: string;
+    eventInfo?: EventInfo;
+    hasEvent?: boolean;
+    n8nResponse?: unknown;
   } | null>(null);
   const [activeTab, setActiveTab] = useState("rooms");
   const router = useRouter();
@@ -458,9 +470,67 @@ export default function AdminDashboard() {
               ) : (
                 <div>
                   <p className="font-bold">{flow4Result.message}</p>
-                  {flow4Result.totalProducts && <p>Tổng sản phẩm: {flow4Result.totalProducts}</p>}
-                  {flow4Result.updatedCount !== undefined && <p>Đã cập nhật: {flow4Result.updatedCount}</p>}
-                  {flow4Result.unchangedCount !== undefined && <p>Không thay đổi: {flow4Result.unchangedCount}</p>}
+                  
+                  {/* Event Info */}
+                  {(() => {
+                    const eventData = flow4Result.eventInfo || flow4Result.n8nResponse;
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    if (eventData && typeof eventData === 'object' && (eventData as any).event_name) {
+                      return 
+                        <div className="mt-4 bg-white rounded-lg p-4 shadow-sm">
+                          <h3 className="font-bold text-lg mb-3 text-gray-800">📅 Thông tin sự kiện</h3>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm text-gray-500">Tên sự kiện</p>
+                              <p className="font-semibold text-lg">
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {(eventData as any).event_name || (eventData as any).name || '—'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-500">Tỷ lệ tăng giá</p>
+                              <p className="font-semibold text-lg text-red-600">
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                +{((eventData as any).increase_percent || 0) * 100 || (eventData as any).discount_percent || 0}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-500">Ngày bắt đầu</p>
+                              <p className="font-medium">
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {(eventData as any).start_date ? new Date((eventData as any).start_date).toLocaleString('vi-VN') : '—'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-500">Ngày kết thúc</p>
+                              <p className="font-medium">
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {(eventData as any).end_date ? new Date((eventData as any).end_date).toLocaleString('vi-VN') : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ;
+                    }
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    if (!flow4Result.eventInfo && !flow4Result.hasEvent && !((flow4Result.n8nResponse as any)?.event_name)) {
+                      return (
+                        <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                          <p className="text-yellow-800 font-medium">
+                            ⚠️ Không có sự kiện nào đang diễn ra. Giá phòng đã được reset về giá gốc (base_price).
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  
+                  {/* Updated Rooms Count */}
+                  {flow4Result.updatedCount !== undefined && (
+                    <div className="mt-3 text-sm">
+                      <p>✅ Số phòng đã cập nhật: <span className="font-bold">{flow4Result.updatedCount}</span></p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

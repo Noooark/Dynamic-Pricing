@@ -116,29 +116,28 @@ exports.updateProductPrice = async (req, res) => {
       throw updateError;
     }
 
-    // Tìm room_id từ products table (giả sử có trường room_id)
-    // Nếu không có, có thể bỏ qua hoặc dùng cách khác
-    let roomId = null;
+    // Tìm room_type từ products table (nếu có)
+    let roomType = null;
     try {
       const { data: productData } = await supabase
         .from('products')
-        .select('room_id')
+        .select('room_type')
         .eq('sku', sku)
         .maybeSingle();
       
-      if (productData && productData.room_id) {
-        roomId = productData.room_id;
+      if (productData && productData.room_type) {
+        roomType = productData.room_type;
       }
     } catch (e) {
-      // Bảng products có thể không có room_id
-      console.log("Product has no room_id, skipping room association");
+      // Bảng products có thể không có room_type
+      console.log("Product has no room_type, skipping room association");
     }
 
-    // Ghi log vào price_history (schema mới)
+    // Ghi log vào price_history (schema mới với room_type)
     const { error: logError } = await supabase
       .from('price_history')
       .insert({
-        room_id: roomId,
+        room_type: roomType,
         old_price: oldPrice,
         new_price: newPrice,
         reason: "Admin manual update",
@@ -165,13 +164,13 @@ exports.updateProductPrice = async (req, res) => {
 };
 
 /**
- * Lấy lịch sử giá (schema mới: price_history có room_id)
+ * Lấy lịch sử giá (schema mới: price_history có room_type là text)
  */
 exports.getPriceHistory = async (req, res) => {
   try {
-    const { room_id, limit = 50 } = req.query;
+    const { room_type, limit = 50 } = req.query;
 
-    console.log("🔍 Getting price history:", { room_id, limit });
+    console.log("🔍 Getting price history:", { room_type, limit });
 
     // Kiểm tra Supabase connection
     if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -184,19 +183,13 @@ exports.getPriceHistory = async (req, res) => {
 
     let query = supabase
       .from('price_history')
-      .select(`
-        *,
-        rooms (
-          id,
-          room_type
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(parseInt(limit));
 
-    if (room_id) {
-      console.log(`🔍 Filtering by room_id: ${room_id}`);
-      query = query.eq('room_id', room_id);
+    if (room_type) {
+      console.log(`🔍 Filtering by room_type: ${room_type}`);
+      query = query.eq('room_type', room_type);
     }
 
     const { data: history, error } = await query;
@@ -216,20 +209,9 @@ exports.getPriceHistory = async (req, res) => {
 
     console.log(`✅ Price history found: ${history ? history.length : 0} records`);
 
-    // Format lại data cho frontend
-    const historyFormatted = (history || []).map(item => ({
-      id: item.id,
-      room_id: item.room_id,
-      room_type: item.rooms?.room_type || 'Unknown',
-      old_price: item.old_price,
-      new_price: item.new_price,
-      reason: item.reason,
-      created_at: item.created_at
-    }));
-
     res.json({
-      history: historyFormatted,
-      total: historyFormatted.length
+      history: history || [],
+      total: (history || []).length
     });
 
   } catch (err) {
@@ -417,7 +399,6 @@ exports.runFlow2 = async (req, res) => {
 
 /**
  * Chạy FLOW 4 (Cập nhật giảm giá theo Event) - Gọi n8n webhook
- * Nếu không có event hoạt động thì tự động chạy FLOW 1
  */
 exports.runFlow4 = async (req, res) => {
   try {
@@ -434,20 +415,18 @@ exports.runFlow4 = async (req, res) => {
 
     const { date } = req.body;
 
-    // Nếu không có date, dùng ngày hiện tại
+    // Nếu không有 date, dùng ngày hiện tại
     const targetDate = date || new Date().toISOString().split('T')[0];
 
     console.log("📅 Using date:", targetDate);
 
     console.log("🚀 Running FLOW 4 via n8n webhook...");
-    console.log(`📅 Date: ${date}`);
 
     // Gọi n8n webhook để chạy FLOW 4
     const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_FLOW4_WEBHOOK_URL || "http://168.144.39.198:5678/webhook/event-check";
+    const n8nWebhookUrl = process.env.N8N_FLOW4_WEBHOOK_URL || "https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/event-check";
 
     console.log("📍 Webhook URL:", n8nWebhookUrl);
-    console.log("📤 Sending payload:", { date: date });
 
     const response = await axios.post(
       n8nWebhookUrl,
@@ -455,7 +434,7 @@ exports.runFlow4 = async (req, res) => {
         date: date
       },
       { 
-        timeout: 30000, // Tăng timeout vì FLOW 4 cần thời gian để cập nhật tất cả sản phẩm
+        timeout: 30000,
         headers: {
           'Content-Type': 'application/json'
         }
@@ -467,85 +446,54 @@ exports.runFlow4 = async (req, res) => {
     // Phân tích kết quả
     const result = response.data;
     let message = "Thực hiện FLOW 4 thành công";
-    let affectedProducts = 0;
-    let discountPercent = 0;
-    let hasEvent = false;
+    let eventInfo = null;
+    let updatedRooms = [];
 
-    console.log("🔍 FLOW 4 result structure:", typeof result, result);
-
-    if (result && typeof result === 'object') {
-      // Xử lý response object từ n8n
-      if (result.hasEvent && result.discount_percent) {
-        hasEvent = true;
-        discountPercent = result.discount_percent;
-        affectedProducts = result.affectedProducts || 0;
-        const eventName = result.eventInfo?.name || "Event";
-        message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho event ${eventName}`;
-      } else if (result.eventInfo && result.eventInfo.discount_percent) {
-        hasEvent = true;
-        discountPercent = result.eventInfo.discount_percent;
-        affectedProducts = result.affectedProducts || 0;
-        const eventName = result.eventInfo.name || "Event";
-        message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho event ${eventName}`;
-      } else {
-        // Không có event hoạt động - TỰ ĐỘNG CHẠY FLOW 1
-        console.log("⚠️  Không có event hoạt động, tự động chạy FLOW 1...");
-        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động, đang chạy FLOW 1 thay thế...";
-        
-        // Gọi FLOW 1
-        const flow1Result = await runFlow1Internal();
-        
-        if (flow1Result.success) {
-          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, đã chạy FLOW 1 thay thế. ${flow1Result.message}`;
-        } else {
-          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, chạy FLOW 1 thay thế thất bại: ${flow1Result.error}`;
-        }
-      }
-    } else if (result && Array.isArray(result)) {
-      // Xử lý response array (dự phòng)
-      affectedProducts = result.length;
-      if (result[0] && result[0].json) {
-        discountPercent = result[0].json.discount_percent || 0;
-      }
-      if (discountPercent > 0) {
-        message = `Thực hiện FLOW 4 thành công - Áp dụng giảm giá ${discountPercent}% cho ${affectedProducts} sản phẩm`;
-      } else {
-        // Không có event hoạt động - TỰ ĐỘNG CHẠY FLOW 1
-        console.log("⚠️  Không có event hoạt động, tự động chạy FLOW 1...");
-        message = "Thực hiện FLOW 4 thành công - Không có event hoạt động, đang chạy FLOW 1 thay thế...";
-        
-        // Gọi FLOW 1
-        const flow1Result = await runFlow1Internal();
-        
-        if (flow1Result.success) {
-          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, đã chạy FLOW 1 thay thế. ${flow1Result.message}`;
-        } else {
-          message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, chạy FLOW 1 thay thế thất bại: ${flow1Result.error}`;
-        }
-      }
-    } else {
-      // Không có event hoạt động - TỰ ĐỘNG CHẠY FLOW 1
-      console.log("⚠️  Không có event hoạt động, tự động chạy FLOW 1...");
-      message = "Thực hiện FLOW 4 thành công - Không có event hoạt động, đang chạy FLOW 1 thay thế...";
+    // Xử lý response - có thể là array hoặc object
+    if (Array.isArray(result)) {
+      // Response là array các rooms
+      updatedRooms = result;
       
-      // Gọi FLOW 1
-      const flow1Result = await runFlow1Internal();
-      
-      if (flow1Result.success) {
-        message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, đã chạy FLOW 1 thay thế. ${flow1Result.message}`;
+      // Lấy thông tin event từ room đầu tiên
+      if (result.length > 0 && result[0].update_reason) {
+        const eventReason = result[0].update_reason;
+        // Extract event name from "Sự kiện: <tên event>"
+        const eventName = eventReason.replace('Sự kiện:', '').trim();
+        
+        // Lấy increase_percent từ room đầu tiên
+        const increasePercent = result[0].increase_percent || 0;
+        
+        eventInfo = {
+          event_name: eventName,
+          increase_percent: increasePercent / 100, // Convert to decimal
+          room_count: result.length
+        };
+        
+        message = `Thực hiện FLOW 4 thành công - Áp dụng tăng giá ${increasePercent}% cho event "${eventName}"`;
       } else {
-        message = `Thực hiện FLOW 4 thành công - Không có event hoạt động, chạy FLOW 1 thay thế thất bại: ${flow1Result.error}`;
+        message = "Thực hiện FLOW 4 thành công - Không có sự kiện đang diễn ra";
+      }
+    } else if (result && typeof result === 'object') {
+      // Response là object
+      if (result.eventInfo) {
+        eventInfo = result.eventInfo;
+        message = `Thực hiện FLOW 4 thành công - Event: ${eventInfo.event_name || 'Unknown'}`;
+      } else {
+        message = "Thực hiện FLOW 4 thành công - Không có sự kiện đang diễn ra";
       }
     }
 
     res.json({
       message: message,
       date: date,
+      eventInfo: eventInfo,
+      hasEvent: !!eventInfo,
+      updatedCount: updatedRooms.length,
+      updatedRooms: updatedRooms,
       result: {
-        hasEvent: discountPercent > 0,
-        discountPercent: discountPercent,
-        affectedProducts: affectedProducts,
-        details: result
+        hasEvent: !!eventInfo,
+        eventInfo: eventInfo,
+        updatedRooms: updatedRooms
       }
     });
 
@@ -556,60 +504,13 @@ exports.runFlow4 = async (req, res) => {
     if (err.response) {
       console.error("📛 Response status:", err.response.status);
       console.error("📛 Response data:", err.response.data);
-      console.error("📛 Response headers:", err.response.headers);
-    } else {
-      console.error("❌ No response object - likely network/connection error");
     }
     
     res.status(500).json({ 
       message: "Lỗi thực hiện FLOW 4", 
       error: err.message,
-      details: err.response?.data || null,
-      stack: err.stack
+      details: err.response?.data || null
     });
   }
 };
 
-/**
- * Hàm chạy FLOW 1 nội bộ (dùng cho FLOW 4 gọi)
- */
-async function runFlow1Internal() {
-  try {
-    console.log("🚀 Running FLOW 1 internally via n8n webhook...");
-
-    // Gọi n8n webhook để chạy FLOW 1
-    const axios = require('axios');
-    const n8nWebhookUrl = process.env.N8N_FLOW1_WEBHOOK_URL || "https://nonempirically-araucarian-leia.ngrok-free.dev/webhook/flow1";
-
-    console.log("📍 FLOW 1 Webhook URL:", n8nWebhookUrl);
-
-    const response = await axios.post(
-      n8nWebhookUrl,
-      {
-        action: "run_flow1_from_flow4",
-        timestamp: new Date().toISOString()
-      },
-      { timeout: 30000 } // 30 giây timeout
-    );
-
-    console.log("✅ FLOW 1 internal webhook response:", response.data);
-
-    return {
-      success: true,
-      message: "FLOW 1 đã được kích hoạt thành công qua n8n",
-      n8nResponse: response.data
-    };
-
-  } catch (err) {
-    console.error("❌ Run FLOW 1 internal error:", err.message);
-    if (err.response) {
-      console.error("📛 FLOW 1 Response status:", err.response.status);
-      console.error("📛 FLOW 1 Response data:", err.response.data);
-      console.error("📛 FLOW 1 Response headers:", err.response.headers);
-    }
-    return {
-      success: false,
-      error: err.message
-    };
-  }
-}
