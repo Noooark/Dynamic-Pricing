@@ -314,16 +314,16 @@ export default function AdminDashboard() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Flow 1 Button */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">FLOW 1: Tự động giảm giá theo đối thủ</h2>
-          <div className="text-gray-600 mb-4">
+          <h2 className="text-xl font-bold mb-4">FLOW 1: Tự động giảm giá theo số lượng phòng trống</h2>
+          {/* <div className="text-gray-600 mb-4">
             <p>Hệ thống sẽ tự động kiểm tra giá đối thủ và điều chỉnh giá sản phẩm theo các quy tắc:</p>
-            <ul className="list-disc list-inside mt-2">
+            <ul className="list-disc list-inside mt-2">trống
               <li>Giảm 1.000đ so với giá đối thủ</li>
               <li>Không giảm dưới Floor Price</li>
               <li>Bảo vệ margin tối thiểu 12%</li>
               <li>Giới hạn giảm tối đa theo % cài đặt</li>
             </ul>
-          </div>
+          </div> */}
           
           {/* Webhook URL Info */}
           <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -372,7 +372,7 @@ export default function AdminDashboard() {
         {/* Flow 2 Button */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">FLOW 2: Theo dõi giá đối thủ</h2>
-          <div className="text-gray-600 mb-4">
+          {/* <div className="text-gray-600 mb-4">
             <p>Hệ thống sẽ tự động quét giá đối thủ từ Google Hotels và điều chỉnh giá phòng:</p>
             <ul className="list-disc list-inside mt-2">
               <li>Quét giá từ Google Hotels qua SerpAPI</li>
@@ -381,7 +381,7 @@ export default function AdminDashboard() {
               <li>Không giảm dưới Floor Price</li>
               <li>Gửi email thông báo ưu đãi cho khách hàng</li>
             </ul>
-          </div>
+          </div> */}
           
           {/* Webhook URL Info */}
           <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
