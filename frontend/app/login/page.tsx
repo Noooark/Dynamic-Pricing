@@ -104,14 +104,71 @@ export default function LoginPage() {
         if (customerError) {
           console.error("[Login] Error fetching customer:", customerError);
           // Also try to check if any customer exists with this email
-          const { data: emailCheck } = await supabase
+          const { data: emailCheck, error: emailError } = await supabase
             .from('customers')
             .select('id, user_id, full_name, email')
             .eq('email', data.user.email)
-            .single();
+            .maybeSingle();
           console.log("[Login] Email check result:", emailCheck);
           
-          throw new Error("Không tìm thấy thông tin khách hàng: " + customerError.message);
+          if (emailCheck) {
+            // Found customer by email, update user_id
+            console.log("[Login] Found customer by email, updating user_id...");
+            const { error: updateError } = await supabase
+              .from('customers')
+              .update({ user_id: userId })
+              .eq('id', emailCheck.id);
+
+            if (updateError) {
+              console.error("[Login] Error updating user_id:", updateError);
+            }
+
+            // Use this customer
+            const customerWithRequiredFields = {
+              id: emailCheck.id,
+              customer_id: emailCheck.id,
+              user_id: emailCheck.user_id || userId,
+              name: emailCheck.full_name || emailCheck.email,
+              email: emailCheck.email,
+              membership_type: 'Standard',
+            };
+            signIn(customerWithRequiredFields);
+            setMessage({ type: "success", text: "Chào mừng trở lại Khoi Hotel" });
+            setTimeout(() => router.push("/account"), 1200);
+            return;
+          }
+          
+          // Customer not found by user_id or email, create new one
+          console.log("[Login] Creating new customer...");
+          const { data: newCustomer, error: createError } = await supabase
+            .from('customers')
+            .insert({
+              user_id: userId,
+              full_name: data.user.user_metadata?.full_name || data.user.email,
+              email: data.user.email,
+              rank_id: 1
+            })
+            .select('id, user_id, full_name, email')
+            .single();
+
+          if (createError || !newCustomer) {
+            console.error("[Login] Error creating customer:", createError);
+            throw new Error("Không thể tạo khách hàng: " + (createError?.message || customerError.message));
+          }
+
+          console.log("[Login] Created new customer:", newCustomer);
+          const customerWithRequiredFields = {
+            id: newCustomer.id,
+            customer_id: newCustomer.id,
+            user_id: newCustomer.user_id,
+            name: newCustomer.full_name || newCustomer.email,
+            email: newCustomer.email,
+            membership_type: 'Standard',
+          };
+          signIn(customerWithRequiredFields);
+          setMessage({ type: "success", text: "Chào mừng trở lại Khoi Hotel" });
+          setTimeout(() => router.push("/account"), 1200);
+          return;
         }
 
         console.log("[Login] Customer data found:", customerData);
