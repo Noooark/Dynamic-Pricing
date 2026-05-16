@@ -301,12 +301,26 @@ export default function AdminDashboard() {
               <p className="text-gray-600 mt-1">Xin chào, {adminInfo.full_name}</p>
             )}
           </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition"
-          >
-            Đăng xuất
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => router.push("/admin/rooms")}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition flex items-center gap-2"
+            >
+              🏨 Quản lý Phòng
+            </button>
+            <button
+              onClick={() => router.push("/admin/events")}
+              className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 transition flex items-center gap-2"
+            >
+              📅 Quản lý Sự kiện
+            </button>
+            <button
+              onClick={handleLogout}
+              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition"
+            >
+              Đăng xuất
+            </button>
+          </div>
         </div>
       </header>
 
